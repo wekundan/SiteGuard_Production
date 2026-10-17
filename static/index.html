@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>SiteGuard — Breakdown Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <style>
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    @keyframes pulseRedBorder {
+      0%, 100% { border-color: #ef4444; }
+      50% { border-color: #fca5a5; }
+    }
+    .overdue-border {
+      animation: pulseRedBorder 1.5s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
+
+  <!-- Simple Clean Header -->
+  <header class="bg-slate-900 text-white sticky top-0 z-30 shadow">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <span class="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-black">🛠️</span>
+        <span class="font-extrabold text-base tracking-tight">SiteGuard</span>
+      </div>
+      <button
+        id="btn-reset-demo"
+        type="button"
+        class="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700"
+      >
+        Reset Demo
+      </button>
+    </div>
+
+    <!-- Clean 4-Role Navigation Bar -->
+    <nav class="bg-slate-950 border-t border-slate-800">
+      <div class="max-w-4xl mx-auto grid grid-cols-4 text-center">
+        <button
+          id="tab-site_office"
+          type="button"
+          data-role-tab="site_office"
+          class="py-3 text-xs sm:text-sm font-bold border-b-2 border-amber-400 text-amber-300 bg-slate-900"
+        >
+          1. Report
+        </button>
+        <button
+          id="tab-supervisor"
+          type="button"
+          data-role-tab="supervisor"
+          class="py-3 text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-white flex items-center justify-center gap-1.5"
+        >
+          <span>2. Inspect</span>
+          <span id="badge-supervisor-count" class="px-1.5 py-0.2 rounded-full text-[11px] bg-red-600 text-white">2</span>
+        </button>
+        <button
+          id="tab-head_office"
+          type="button"
+          data-role-tab="head_office"
+          class="py-3 text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-white flex items-center justify-center gap-1.5"
+        >
+          <span>3. Head Office</span>
+          <span id="badge-ho-count" class="px-1.5 py-0.2 rounded-full text-[11px] bg-purple-600 text-white">1</span>
+        </button>
+        <button
+          id="tab-management"
+          type="button"
+          data-role-tab="management"
+          class="py-3 text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-white"
+        >
+          4. Dashboard
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Simple Status Toast -->
+  <div id="toast-container" class="max-w-xl mx-auto w-full px-4 pt-4 hidden">
+    <div id="toast-box" class="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border shadow-sm text-sm font-bold">
+      <span id="toast-message"></span>
+      <button id="btn-close-toast" type="button" class="text-xs opacity-70 hover:opacity-100">✕</button>
+    </div>
+  </div>
+
+  <!-- Main Content Area -->
+  <main id="main-wrapper" class="flex-1 max-w-4xl w-full mx-auto px-4 py-6">
+
+    <!-- =====================================================================
+         VIEW 1: SITE OFFICE (EXTREMELY SIMPLE MOBILE VIEW)
+    ===================================================================== -->
+    <section id="view-site_office" class="max-w-md mx-auto">
+      <div class="bg-white rounded-3xl shadow-md border border-slate-200 p-6 space-y-6">
+        <h2 class="text-xl font-black text-slate-900 text-center">Report Breakdown</h2>
+
+        <form id="form-create-breakdown" class="space-y-6">
+          <div>
+            <label for="select-machine" class="block text-sm font-bold text-slate-600 mb-2">
+              Machine Name
+            </label>
+            <select
+              id="select-machine"
+              class="w-full rounded-2xl border-2 border-slate-300 bg-slate-50 px-4 py-4 text-base font-bold text-slate-900 focus:border-slate-900 focus:bg-white focus:outline-none"
+            ></select>
+          </div>
+
+          <button
+            id="btn-submit-breakdown"
+            type="submit"
+            class="w-full py-6 px-6 rounded-2xl bg-red-600 hover:bg-red-700 active:scale-[0.99] disabled:bg-slate-300 disabled:text-slate-500 text-white font-black text-xl tracking-wide uppercase shadow-lg transition cursor-pointer"
+          >
+            🚨 Report Breakdown
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         VIEW 2: SITE SUPERVISOR (SIMPLE MOBILE QUEUE)
+    ===================================================================== -->
+    <section id="view-supervisor" class="max-w-lg mx-auto space-y-4 hidden">
+      <!-- Sub-tabs: Inspect vs Mark Working -->
+      <div class="grid grid-cols-2 gap-2 bg-slate-200 p-1 rounded-2xl">
+        <button
+          id="subtab-pending-inspection"
+          type="button"
+          class="py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-white text-slate-900 shadow-sm"
+        >
+          Needs Inspection (<span id="subtab-badge-inspect">0</span>)
+        </button>
+        <button
+          id="subtab-awaiting-parts"
+          type="button"
+          class="py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600"
+        >
+          Waiting on Parts (<span id="subtab-badge-parts">0</span>)
+        </button>
+      </div>
+
+      <!-- Pending Inspection Queue -->
+      <div id="supervisor-inspection-list" class="space-y-3"></div>
+
+      <!-- Waiting on Parts / Mark Working Queue -->
+      <div id="supervisor-parts-list" class="space-y-3 hidden"></div>
+    </section>
+
+    <!-- =====================================================================
+         VIEW 3: HEAD OFFICE (CLEAN DESKTOP TABLE + ORDER FORM)
+    ===================================================================== -->
+    <section id="view-head_office" class="space-y-4 hidden">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+          <h2 class="text-base font-black text-slate-900">Head Office Purchase Order Queue</h2>
+          <span id="ho-queue-header-count" class="text-xs font-bold px-2.5 py-1 rounded-full bg-purple-100 text-purple-900">0 Waiting</span>
+        </div>
+        <div id="ho-table-wrapper" class="overflow-x-auto"></div>
+      </div>
+
+      <!-- Order Form (Shown when a ticket is selected) -->
+      <div id="ho-order-panel" class="bg-white rounded-2xl border-2 border-purple-300 shadow-sm p-5 max-w-xl mx-auto">
+        <div id="ho-selected-summary" class="text-sm font-bold text-slate-900 mb-3"></div>
+        <form id="form-ho-order" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <input
+            id="input-ho-po"
+            type="text"
+            placeholder="Purchase Order Number"
+            class="rounded-xl border-2 border-slate-300 px-3.5 py-3 text-sm font-semibold text-slate-900 focus:border-purple-600 focus:outline-none"
+          />
+          <input
+            id="input-ho-eta"
+            type="date"
+            class="rounded-xl border-2 border-slate-300 px-3.5 py-3 text-sm font-semibold text-slate-900 focus:border-purple-600 focus:outline-none"
+          />
+          <button
+            id="btn-submit-ho-order"
+            type="submit"
+            class="py-3 px-4 rounded-xl bg-purple-700 hover:bg-purple-800 disabled:bg-slate-300 text-white font-black text-sm uppercase shadow cursor-pointer"
+          >
+            Submit Order
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         VIEW 4: MANAGEMENT DASHBOARD (CLEAN HIGH-LEVEL METRICS)
+    ===================================================================== -->
+    <section id="view-management" class="space-y-6 hidden">
+      <!-- 3 Core Metrics Requested -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm text-center">
+          <div class="text-xs font-bold uppercase text-slate-500">Machines Broken</div>
+          <div id="kpi-broken-count" class="text-4xl font-black text-red-600 mt-2">0</div>
+          <div id="kpi-total-fleet" class="text-xs text-slate-400 mt-1">of 8 machines</div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+          <div class="text-xs font-bold uppercase text-slate-500 text-center mb-2">Active Bottlenecks</div>
+          <div id="kpi-bottleneck-list" class="space-y-1.5 text-sm font-semibold text-slate-800"></div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm text-center">
+          <div class="text-xs font-bold uppercase text-slate-500">Average Repair Time</div>
+          <div id="kpi-avg-repair" class="text-4xl font-black text-emerald-600 mt-2">—</div>
+          <div id="kpi-resolved-count" class="text-xs text-slate-400 mt-1">0 resolved</div>
+        </div>
+      </div>
+
+      <!-- Simple Aging Table -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-200">
+          <h3 class="text-sm font-black uppercase tracking-wider text-slate-700">Breakdown Aging List</h3>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500">
+                <th class="py-3 px-4">Machine</th>
+                <th class="py-3 px-4">Status</th>
+                <th class="py-3 px-4">Issue / PO</th>
+                <th class="py-3 px-4">ETA</th>
+                <th class="py-3 px-4 text-right">Age / Repair Time</th>
+              </tr>
+            </thead>
+            <tbody id="aging-table-body" class="divide-y divide-slate-200 text-sm"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // =========================================================================
+    // Default Data (Used when running standalone; overwritten by FastAPI when live)
+    // =========================================================================
+    const DEFAULT_USER_ID = "11111111-1111-4111-8111-111111111111";
+
+    function hoursAgo(hrs) {
+      return new Date(Date.now() - hrs * 3600 * 1000).toISOString();
+    }
+
+    function daysFromNowDate(days) {
+      const d = new Date(Date.now() + days * 86400 * 1000);
+      return d.toISOString().split("T")[0];
+    }
+
+    function getDefaultMachines() {
+      return [
+        { machine_id: "10000000-0000-4000-8000-000000000001", name: "Excavator 3000", location: "Site A - Zone 1", status: "broken_down" },
+        { machine_id: "10000000-0000-4000-8000-000000000002", name: "Tower Crane TC-6015", location: "Site A - Zone 2", status: "broken_down" },
+        { machine_id: "10000000-0000-4000-8000-000000000003", name: "Transit Mixer TM-09", location: "Site B - Plant", status: "broken_down" },
+        { machine_id: "10000000-0000-4000-8000-000000000004", name: "Backhoe Loader JCB-3DX", location: "Site B - Trench", status: "active" },
+        { machine_id: "10000000-0000-4000-8000-000000000005", name: "Motor Grader MG-140", location: "Site A - Road", status: "active" },
+        { machine_id: "10000000-0000-4000-8000-000000000006", name: "Vibro Roller VR-210", location: "Site A - Embankment", status: "active" }
+      ];
+    }
+
+    function getDefaultTickets() {
+      return [
+        {
+          ticket_id: "90000000-0000-4000-8000-000000000101",
+          machine_id: "10000000-0000-4000-8000-000000000001",
+          reported_by: DEFAULT_USER_ID,
+          issue_description: null,
+          status: "pending_inspection",
+          resolution_type: null,
+          po_details: null,
+          eta_date: null,
+          created_at: hoursAgo(3.2),
+          inspected_at: null,
+          ho_received_at: null,
+          closed_at: null
+        },
+        {
+          ticket_id: "90000000-0000-4000-8000-000000000102",
+          machine_id: "10000000-0000-4000-8000-000000000002",
+          reported_by: DEFAULT_USER_ID,
+          issue_description: null,
+          status: "pending_inspection",
+          resolution_type: null,
+          po_details: null,
+          eta_date: null,
+          created_at: hoursAgo(0.5),
+          inspected_at: null,
+          ho_received_at: null,
+          closed_at: null
+        },
+        {
+          ticket_id: "90000000-0000-4000-8000-000000000103",
+          machine_id: "10000000-0000-4000-8000-000000000003",
+          reported_by: DEFAULT_USER_ID,
+          issue_description: "Gearbox bearing seized; needs OEM assembly.",
+          status: "pending_ho_action",
+          resolution_type: "head_office",
+          po_details: null,
+          eta_date: null,
+          created_at: hoursAgo(5.5),
+          inspected_at: hoursAgo(4.8),
+          ho_received_at: hoursAgo(4.8),
+          closed_at: null
+        },
+        {
+          ticket_id: "90000000-0000-4000-8000-000000000104",
+          machine_id: "10000000-0000-4000-8000-000000000004",
+          reported_by: DEFAULT_USER_ID,
+          issue_description: "Replaced alternator belt from local shop.",
+          status: "resolved",
+          resolution_type: "local",
+          po_details: null,
+          eta_date: daysFromNowDate(-1),
+          created_at: hoursAgo(20.0),
+          inspected_at: hoursAgo(19.2),
+          ho_received_at: null,
+          closed_at: hoursAgo(14.5)
+        }
+      ];
+    }
+
+    const STATUS_LABELS = {
+      pending_inspection: { label: "Waiting Inspection", cls: "bg-amber-100 text-amber-900" },
+      pending_local_part: { label: "Waiting Local Part", cls: "bg-sky-100 text-sky-900" },
+      pending_ho_action: { label: "Waiting on HO", cls: "bg-purple-100 text-purple-900" },
+      pending_arrival: { label: "Order Sent (In Transit)", cls: "bg-indigo-100 text-indigo-900" },
+      resolved: { label: "Resolved", cls: "bg-emerald-100 text-emerald-900" }
+    };
+
+    // =========================================================================
+    // State (Persists typed text in `draftDiag` & `draftEta` so inputs NEVER reset)
+    // =========================================================================
+    let state = {
+      machines: getDefaultMachines(),
+      tickets: getDefaultTickets(),
+      activeView: "site_office",
+      supervisorTab: "pending_inspection",
+      selectedMachineId: "",
+      inspectingTicketId: "90000000-0000-4000-8000-000000000101",
+      sourcingModeTicketId: null,
+      selectedHoTicketId: "90000000-0000-4000-8000-000000000103",
+      draftDiag: {},
+      draftEta: {},
+      lastServerSignature: ""
+    };
+
+    function formatDateTime(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      return d.toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      });
+    }
+
+    function getElapsedHours(startIso, endIso = null) {
+      if (!startIso) return 0;
+      const start = new Date(startIso).getTime();
+      const end = endIso ? new Date(endIso).getTime() : Date.now();
+      return Math.max(0, (end - start) / (1000 * 3600));
+    }
+
+    function formatDuration(hours) {
+      const mins = Math.round((hours || 0) * 60);
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return h === 0 ? `${m}m` : `${h}h ${m}m`;
+    }
+
+    function isTicketOverdue(t) {
+      return t.status === "pending_inspection" && getElapsedHours(t.created_at) > 2.0;
+    }
+
+    function getMachine(id) {
+      return state.machines.find((m) => m.machine_id === id);
+    }
+
+    function showToast(message, isError = false) {
+      const container = document.getElementById("toast-container");
+      const box = document.getElementById("toast-box");
+      document.getElementById("toast-message").textContent = message;
+      box.className = "flex items-center justify-between gap-3 px-4 py-3 rounded-xl border shadow-sm text-sm font-bold " +
+        (isError ? "bg-red-50 border-red-300 text-red-900" : "bg-emerald-50 border-emerald-300 text-emerald-900");
+      container.classList.remove("hidden");
+      setTimeout(() => container.classList.add("hidden"), 3500);
+    }
+
+    // =========================================================================
+    // Helper to call live FastAPI server when hosted (with instant local fallback)
+    // =========================================================================
+    async function apiRequest(method, path, body = null) {
+      try {
+        const opts = { method, headers: { "Content-Type": "application/json" } };
+        if (body) opts.body = JSON.stringify(body);
+        const res = await fetch(path, opts);
+        if (res.ok) {
+          return await res.json();
+        }
+      } catch (e) {
+        // Running offline or in standalone preview
+      }
+      return null;
+    }
+
+    async function pullFromServerIfIdle() {
+      // Never re-render while user is typing in any input or textarea!
+      const activeTag = document.activeElement ? document.activeElement.tagName : "";
+      if (activeTag === "TEXTAREA" || activeTag === "INPUT" || activeTag === "SELECT") {
+        return;
+      }
+      const data = await apiRequest("GET", "/api/bootstrap");
+      if (data && data.machines && data.tickets) {
+        const sig = JSON.stringify({ m: data.machines, t: data.tickets.map((x) => [x.ticket_id, x.status, x.po_details]) });
+        if (sig !== state.lastServerSignature) {
+          state.lastServerSignature = sig;
+          state.machines = data.machines;
+          state.tickets = data.tickets;
+          renderAll();
+        }
+      }
+    }
+
+    // =========================================================================
+    // Render Views
+    // =========================================================================
+    function renderAll() {
+      const currM = getMachine(state.selectedMachineId);
+      if (!currM || currM.status === "broken_down") {
+        const firstActive = state.machines.find((m) => m.status === "active");
+        state.selectedMachineId = firstActive ? firstActive.machine_id : "";
+      }
+
+      renderNav();
+      renderSiteOffice();
+      renderSupervisor();
+      renderHeadOffice();
+      renderManagement();
+    }
+
+    function renderNav() {
+      const pendingInspect = state.tickets.filter((t) => t.status === "pending_inspection");
+      const hoQueue = state.tickets.filter((t) => t.status === "pending_ho_action");
+
+      document.getElementById("badge-supervisor-count").textContent = String(pendingInspect.length);
+      document.getElementById("badge-ho-count").textContent = String(hoQueue.length);
+
+      ["site_office", "supervisor", "head_office", "management"].forEach((role) => {
+        const btn = document.getElementById(`tab-${role}`);
+        const sec = document.getElementById(`view-${role}`);
+        if (state.activeView === role) {
+          btn.className = "py-3 text-xs sm:text-sm font-bold border-b-2 border-amber-400 text-amber-300 bg-slate-900 flex items-center justify-center gap-1.5";
+          sec.classList.remove("hidden");
+        } else {
+          btn.className = "py-3 text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-white flex items-center justify-center gap-1.5";
+          sec.classList.add("hidden");
+        }
+      });
+    }
+
+    function renderSiteOffice() {
+      const sel = document.getElementById("select-machine");
+      const activeMachines = state.machines.filter((m) => m.status === "active");
+      if (activeMachines.length === 0) {
+        sel.innerHTML = `<option value="">All machines are currently broken down</option>`;
+        document.getElementById("btn-submit-breakdown").disabled = true;
+      } else {
+        sel.innerHTML = state.machines
+          .map(
+            (m) => `
+            <option value="${m.machine_id}" ${m.status === "broken_down" ? "disabled" : ""} ${
+              m.machine_id === state.selectedMachineId ? "selected" : ""
+            }>
+              ${m.status === "broken_down" ? "🔴 [Broken] " : "🟢 "}${m.name} (${m.location})
+            </option>`
+          )
+          .join("");
+        document.getElementById("btn-submit-breakdown").disabled = false;
+      }
+    }
+
+    function renderSupervisor() {
+      const pendingList = state.tickets
+        .filter((t) => t.status === "pending_inspection")
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+      const partsList = state.tickets
+        .filter((t) => t.status === "pending_local_part" || t.status === "pending_arrival")
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+      document.getElementById("subtab-badge-inspect").textContent = String(pendingList.length);
+      document.getElementById("subtab-badge-parts").textContent = String(partsList.length);
+
+      const btnInspect = document.getElementById("subtab-pending-inspection");
+      const btnParts = document.getElementById("subtab-awaiting-parts");
+      const inspectContainer = document.getElementById("supervisor-inspection-list");
+      const partsContainer = document.getElementById("supervisor-parts-list");
+
+      if (state.supervisorTab === "pending_inspection") {
+        btnInspect.className = "py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-white text-slate-900 shadow-sm";
+        btnParts.className = "py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600";
+        inspectContainer.classList.remove("hidden");
+        partsContainer.classList.add("hidden");
+      } else {
+        btnParts.className = "py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-white text-slate-900 shadow-sm";
+        btnInspect.className = "py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600";
+        partsContainer.classList.remove("hidden");
+        inspectContainer.classList.add("hidden");
+      }
+
+      if (pendingList.length === 0) {
+        inspectContainer.innerHTML = `
+          <div class="bg-white rounded-2xl p-8 text-center border border-slate-200 text-sm font-semibold text-slate-500">
+            No machines waiting for inspection.
+          </div>`;
+      } else {
+        inspectContainer.innerHTML = pendingList
+          .map((t) => {
+            const m = getMachine(t.machine_id);
+            const overdue = isTicketOverdue(t);
+            const age = formatDuration(getElapsedHours(t.created_at));
+            const isOpen = state.inspectingTicketId === t.ticket_id;
+            const showLocal = state.sourcingModeTicketId === t.ticket_id;
+            const savedText = state.draftDiag[t.ticket_id] || "";
+            const savedEta = state.draftEta[t.ticket_id] || daysFromNowDate(1);
+
+            return `
+            <div class="bg-white rounded-2xl border-2 shadow-sm overflow-hidden ${
+              overdue ? "overdue-border border-red-500" : isOpen ? "border-slate-900" : "border-slate-200"
+            }">
+              <div
+                data-toggle-inspect="${t.ticket_id}"
+                class="p-4 cursor-pointer flex items-center justify-between gap-3"
+              >
+                <div>
+                  <div class="font-black text-base text-slate-900">${m ? m.name : "Machine"}</div>
+                  <div class="text-xs text-slate-500">${m ? m.location : ""} • Reported ${age} ago</div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  ${
+                    overdue
+                      ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-red-600 text-white">
+                           <span class="relative flex h-2 w-2">
+                             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-90"></span>
+                             <span class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                           </span>
+                           Overdue (&gt;2h)
+                         </span>`
+                      : `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900">${age}</span>`
+                  }
+                </div>
+              </div>
+
+              ${
+                isOpen
+                  ? `<div class="p-4 bg-slate-50 border-t border-slate-200 space-y-3">
+                       <textarea
+                         id="diag-input-${t.ticket_id}"
+                         data-diag-ticket="${t.ticket_id}"
+                         rows="2"
+                         placeholder="Enter brief issue description..."
+                         class="w-full rounded-xl border-2 border-slate-300 bg-white p-3 text-sm font-medium text-slate-900 focus:border-slate-900 focus:outline-none"
+                       >${savedText}</textarea>
+
+                       <div class="grid grid-cols-2 gap-2.5">
+                         <button
+                           type="button"
+                           data-open-local-eta="${t.ticket_id}"
+                           class="py-3 px-3 rounded-xl font-bold text-xs sm:text-sm border-2 ${
+                             showLocal
+                               ? "bg-sky-600 text-white border-sky-600"
+                               : "bg-white text-sky-900 border-sky-300 hover:bg-sky-50"
+                           }"
+                         >
+                           Source Locally
+                         </button>
+
+                         <button
+                           type="button"
+                           data-submit-inspect-ho="${t.ticket_id}"
+                           class="py-3 px-3 rounded-xl font-bold text-xs sm:text-sm bg-purple-700 hover:bg-purple-800 text-white"
+                         >
+                           Escalate to Head Office
+                         </button>
+                       </div>
+
+                       ${
+                         showLocal
+                           ? `<div class="p-3 rounded-xl bg-sky-50 border border-sky-200 flex items-center gap-2">
+                                <input
+                                  id="local-eta-input-${t.ticket_id}"
+                                  data-eta-ticket="${t.ticket_id}"
+                                  type="date"
+                                  value="${savedEta}"
+                                  class="flex-1 rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm font-bold"
+                                />
+                                <button
+                                  type="button"
+                                  data-submit-inspect-local="${t.ticket_id}"
+                                  class="px-4 py-2 rounded-lg bg-sky-700 hover:bg-sky-800 text-white text-sm font-bold"
+                                >
+                                  Save ETA
+                                </button>
+                              </div>`
+                           : ""
+                       }
+                     </div>`
+                  : ""
+              }
+            </div>`;
+          })
+          .join("");
+      }
+
+      if (partsList.length === 0) {
+        partsContainer.innerHTML = `
+          <div class="bg-white rounded-2xl p-8 text-center border border-slate-200 text-sm font-semibold text-slate-500">
+            No machines currently waiting on parts.
+          </div>`;
+      } else {
+        partsContainer.innerHTML = partsList
+          .map((t) => {
+            const m = getMachine(t.machine_id);
+            return `
+            <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex items-center justify-between gap-3">
+              <div>
+                <div class="font-black text-base text-slate-900">${m ? m.name : "Machine"}</div>
+                <div class="text-xs text-slate-600 mt-0.5">${t.issue_description || ""}</div>
+                <div class="text-xs text-slate-500 mt-1">
+                  ${t.po_details ? `PO: <strong>${t.po_details}</strong> • ` : ""}ETA: <strong>${t.eta_date || "TBD"}</strong>
+                </div>
+              </div>
+              <button
+                type="button"
+                data-resolve-ticket="${t.ticket_id}"
+                class="px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase shrink-0"
+              >
+                ✓ Mark Working
+              </button>
+            </div>`;
+          })
+          .join("");
+      }
+    }
+
+    function renderHeadOffice() {
+      const hoQueue = state.tickets
+        .filter((t) => t.status === "pending_ho_action")
+        .sort((a, b) => new Date(a.ho_received_at || a.created_at) - new Date(b.ho_received_at || b.created_at));
+
+      document.getElementById("ho-queue-header-count").textContent = `${hoQueue.length} Waiting`;
+
+      if (!hoQueue.find((t) => t.ticket_id === state.selectedHoTicketId)) {
+        state.selectedHoTicketId = hoQueue[0] ? hoQueue[0].ticket_id : null;
+      }
+
+      const wrapper = document.getElementById("ho-table-wrapper");
+      const orderPanel = document.getElementById("ho-order-panel");
+
+      if (hoQueue.length === 0) {
+        wrapper.innerHTML = `<div class="p-8 text-center text-sm font-semibold text-slate-500">No tickets waiting on Head Office.</div>`;
+        orderPanel.classList.add("hidden");
+      } else {
+        orderPanel.classList.remove("hidden");
+        wrapper.innerHTML = `
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500">
+                <th class="py-3 px-4">Machine</th>
+                <th class="py-3 px-4">Issue Description</th>
+                <th class="py-3 px-4">Received At</th>
+                <th class="py-3 px-4 text-right">Select</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 text-sm">
+              ${hoQueue
+                .map((t) => {
+                  const m = getMachine(t.machine_id);
+                  const isSel = t.ticket_id === state.selectedHoTicketId;
+                  return `
+                  <tr data-select-ho-ticket="${t.ticket_id}" class="cursor-pointer ${isSel ? "bg-purple-50" : "hover:bg-slate-50"}">
+                    <td class="py-3.5 px-4 font-bold text-slate-900">${m ? m.name : "Machine"}<div class="text-xs font-normal text-slate-500">${m ? m.location : ""}</div></td>
+                    <td class="py-3.5 px-4 text-slate-700">${t.issue_description || "—"}</td>
+                    <td class="py-3.5 px-4 text-xs text-slate-600 whitespace-nowrap">${formatDateTime(t.ho_received_at)}</td>
+                    <td class="py-3.5 px-4 text-right">
+                      <span class="px-3 py-1 rounded-lg text-xs font-bold ${isSel ? "bg-purple-700 text-white" : "bg-slate-100 text-slate-700"}">
+                        ${isSel ? "Selected" : "Select"}
+                      </span>
+                    </td>
+                  </tr>`;
+                })
+                .join("")}
+            </tbody>
+          </table>`;
+
+        const selTicket = hoQueue.find((t) => t.ticket_id === state.selectedHoTicketId);
+        const selMachine = selTicket ? getMachine(selTicket.machine_id) : null;
+        document.getElementById("ho-selected-summary").textContent = selMachine
+          ? `Order Part for: ${selMachine.name} — "${selTicket.issue_description}"`
+          : "";
+        const etaEl = document.getElementById("input-ho-eta");
+        if (!etaEl.value) etaEl.value = daysFromNowDate(3);
+      }
+    }
+
+    function renderManagement() {
+      const brokenCount = state.machines.filter((m) => m.status === "broken_down").length;
+      document.getElementById("kpi-broken-count").textContent = String(brokenCount);
+      document.getElementById("kpi-total-fleet").textContent = `of ${state.machines.length} machines`;
+
+      const counts = {
+        pending_inspection: 0,
+        pending_local_part: 0,
+        pending_ho_action: 0,
+        pending_arrival: 0
+      };
+      state.tickets.forEach((t) => {
+        if (t.status !== "resolved" && counts[t.status] !== undefined) counts[t.status] += 1;
+      });
+
+      document.getElementById("kpi-bottleneck-list").innerHTML = `
+        <div class="flex justify-between"><span>Waiting on HO:</span><strong class="text-purple-700">${counts.pending_ho_action}</strong></div>
+        <div class="flex justify-between"><span>Waiting on Inspection:</span><strong class="text-amber-600">${counts.pending_inspection}</strong></div>
+        <div class="flex justify-between"><span>Waiting on Parts:</span><strong class="text-sky-700">${counts.pending_local_part + counts.pending_arrival}</strong></div>
+      `;
+
+      const resolved = state.tickets.filter((t) => t.status === "resolved" && t.closed_at && t.created_at);
+      if (resolved.length > 0) {
+        const avgHrs = resolved.reduce((s, t) => s + getElapsedHours(t.created_at, t.closed_at), 0) / resolved.length;
+        document.getElementById("kpi-avg-repair").textContent = `${avgHrs.toFixed(1)}h`;
+      } else {
+        document.getElementById("kpi-avg-repair").textContent = "—";
+      }
+      document.getElementById("kpi-resolved-count").textContent = `${resolved.length} resolved`;
+
+      const tbody = document.getElementById("aging-table-body");
+      tbody.innerHTML = state.tickets
+        .map((t) => {
+          const m = getMachine(t.machine_id);
+          const st = STATUS_LABELS[t.status] || { label: t.status, cls: "bg-slate-100" };
+          const dur = formatDuration(getElapsedHours(t.created_at, t.closed_at));
+          return `
+          <tr>
+            <td class="py-3 px-4 font-bold text-slate-900">${m ? m.name : "Machine"}</td>
+            <td class="py-3 px-4"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold ${st.cls}">${st.label}</span></td>
+            <td class="py-3 px-4 text-xs text-slate-700">${t.po_details ? `<strong>${t.po_details}</strong> — ` : ""}${t.issue_description || "Awaiting inspection"}</td>
+            <td class="py-3 px-4 text-xs text-slate-600 whitespace-nowrap">${t.eta_date || "—"}</td>
+            <td class="py-3 px-4 text-right font-bold text-slate-900 whitespace-nowrap">${dur}</td>
+          </tr>`;
+        })
+        .join("");
+    }
+
+    // =========================================================================
+    // Event Listeners
+    // =========================================================================
+    window.addEventListener("DOMContentLoaded", () => {
+      // Navigation Tabs
+      document.querySelectorAll("[data-role-tab]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          state.activeView = btn.getAttribute("data-role-tab");
+          renderAll();
+        });
+      });
+
+      document.getElementById("btn-close-toast").addEventListener("click", () => {
+        document.getElementById("toast-container").classList.add("hidden");
+      });
+
+      // Reset Demo
+      document.getElementById("btn-reset-demo").addEventListener("click", async () => {
+        await apiRequest("POST", "/api/reset-demo");
+        state.machines = getDefaultMachines();
+        state.tickets = getDefaultTickets();
+        state.draftDiag = {};
+        state.draftEta = {};
+        showToast("Demo data reset.");
+        renderAll();
+      });
+
+      // View 1: Select Machine & Report Breakdown
+      document.getElementById("select-machine").addEventListener("change", (e) => {
+        state.selectedMachineId = e.target.value;
+      });
+
+      document.getElementById("form-create-breakdown").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const machine = getMachine(state.selectedMachineId);
+        if (!machine || machine.status === "broken_down") return;
+
+        const created = await apiRequest("POST", "/api/tickets/create", {
+          machine_id: machine.machine_id,
+          reported_by: DEFAULT_USER_ID
+        });
+
+        const newTicket = created || {
+          ticket_id: "90000000-0000-4000-8000-" + String(Math.floor(100000000000 + Math.random() * 899999999999)),
+          machine_id: machine.machine_id,
+          reported_by: DEFAULT_USER_ID,
+          issue_description: null,
+          status: "pending_inspection",
+          resolution_type: null,
+          po_details: null,
+          eta_date: null,
+          created_at: new Date().toISOString(),
+          inspected_at: null,
+          ho_received_at: null,
+          closed_at: null
+        };
+
+        state.tickets.unshift(newTicket);
+        machine.status = "broken_down";
+        state.inspectingTicketId = newTicket.ticket_id;
+        showToast(`Breakdown reported for ${machine.name}`);
+        renderAll();
+      });
+
+      // View 2: Subtabs
+      document.getElementById("subtab-pending-inspection").addEventListener("click", () => {
+        state.supervisorTab = "pending_inspection";
+        renderSupervisor();
+      });
+      document.getElementById("subtab-awaiting-parts").addEventListener("click", () => {
+        state.supervisorTab = "awaiting_parts";
+        renderSupervisor();
+      });
+
+      // View 2: Preserve typed diagnostic text & ETA in state.draftDiag / state.draftEta on every keystroke!
+      document.getElementById("supervisor-inspection-list").addEventListener("input", (e) => {
+        const diagTicketId = e.target.getAttribute("data-diag-ticket");
+        if (diagTicketId) {
+          state.draftDiag[diagTicketId] = e.target.value;
+        }
+        const etaTicketId = e.target.getAttribute("data-eta-ticket");
+        if (etaTicketId) {
+          state.draftEta[etaTicketId] = e.target.value;
+        }
+      });
+
+      // View 2: Supervisor Click Actions
+      document.getElementById("supervisor-inspection-list").addEventListener("click", async (e) => {
+        // Ignore clicks inside textarea or date input so clicking to type never collapses or resets the card
+        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") {
+          return;
+        }
+
+        const localBtn = e.target.closest("[data-open-local-eta]");
+        if (localBtn) {
+          const tId = localBtn.getAttribute("data-open-local-eta");
+          state.sourcingModeTicketId = tId;
+          renderSupervisor();
+          return;
+        }
+
+        const saveLocalBtn = e.target.closest("[data-submit-inspect-local]");
+        if (saveLocalBtn) {
+          const tId = saveLocalBtn.getAttribute("data-submit-inspect-local");
+          const diag = (state.draftDiag[tId] || document.getElementById(`diag-input-${tId}`)?.value || "").trim();
+          const eta = state.draftEta[tId] || document.getElementById(`local-eta-input-${tId}`)?.value || "";
+          if (diag.length < 3) {
+            showToast("Please enter an issue description first.", true);
+            return;
+          }
+          if (!eta) {
+            showToast("Please select an ETA date.", true);
+            return;
+          }
+
+          await apiRequest("PUT", `/api/tickets/${tId}/inspect`, {
+            issue_description: diag,
+            resolution_type: "local",
+            eta_date: eta
+          });
+
+          const t = state.tickets.find((x) => x.ticket_id === tId);
+          if (t) {
+            t.issue_description = diag;
+            t.resolution_type = "local";
+            t.status = "pending_local_part";
+            t.eta_date = eta;
+            t.inspected_at = new Date().toISOString();
+          }
+          delete state.draftDiag[tId];
+          state.sourcingModeTicketId = null;
+          showToast("Saved local part ETA.");
+          renderAll();
+          return;
+        }
+
+        const hoBtn = e.target.closest("[data-submit-inspect-ho]");
+        if (hoBtn) {
+          const tId = hoBtn.getAttribute("data-submit-inspect-ho");
+          const diag = (state.draftDiag[tId] || document.getElementById(`diag-input-${tId}`)?.value || "").trim();
+          if (diag.length < 3) {
+            showToast("Please enter an issue description first.", true);
+            return;
+          }
+
+          await apiRequest("PUT", `/api/tickets/${tId}/inspect`, {
+            issue_description: diag,
+            resolution_type: "head_office"
+          });
+
+          const t = state.tickets.find((x) => x.ticket_id === tId);
+          if (t) {
+            const nowIso = new Date().toISOString();
+            t.issue_description = diag;
+            t.resolution_type = "head_office";
+            t.status = "pending_ho_action";
+            t.inspected_at = nowIso;
+            t.ho_received_at = nowIso;
+            state.selectedHoTicketId = t.ticket_id;
+          }
+          delete state.draftDiag[tId];
+          showToast("Escalated to Head Office.");
+          renderAll();
+          return;
+        }
+
+        const toggleHeader = e.target.closest("[data-toggle-inspect]");
+        if (toggleHeader) {
+          const tId = toggleHeader.getAttribute("data-toggle-inspect");
+          state.inspectingTicketId = state.inspectingTicketId === tId ? null : tId;
+          state.sourcingModeTicketId = null;
+          renderSupervisor();
+        }
+      });
+
+      // View 2: Mark Machine Working (Resolve)
+      document.getElementById("supervisor-parts-list").addEventListener("click", async (e) => {
+        const resolveBtn = e.target.closest("[data-resolve-ticket]");
+        if (!resolveBtn) return;
+        const tId = resolveBtn.getAttribute("data-resolve-ticket");
+
+        await apiRequest("PUT", `/api/tickets/${tId}/resolve`);
+
+        const t = state.tickets.find((x) => x.ticket_id === tId);
+        if (t) {
+          t.status = "resolved";
+          t.closed_at = new Date().toISOString();
+          const m = getMachine(t.machine_id);
+          if (m) m.status = "active";
+          showToast(`${m ? m.name : "Machine"} marked as working!`);
+          renderAll();
+        }
+      });
+
+      // View 3: Head Office Select & Submit Order
+      document.getElementById("ho-table-wrapper").addEventListener("click", (e) => {
+        const row = e.target.closest("[data-select-ho-ticket]");
+        if (!row) return;
+        state.selectedHoTicketId = row.getAttribute("data-select-ho-ticket");
+        renderHeadOffice();
+      });
+
+      document.getElementById("form-ho-order").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const poVal = document.getElementById("input-ho-po").value.trim();
+        const etaVal = document.getElementById("input-ho-eta").value;
+        if (poVal.length < 2 || !etaVal) {
+          showToast("Please enter both PO Number and ETA Date.", true);
+          return;
+        }
+        const tId = state.selectedHoTicketId;
+        await apiRequest("PUT", `/api/tickets/${tId}/ho-update`, {
+          po_details: poVal,
+          eta_date: etaVal
+        });
+
+        const t = state.tickets.find((x) => x.ticket_id === tId);
+        if (t) {
+          t.po_details = poVal;
+          t.eta_date = etaVal;
+          t.status = "pending_arrival";
+        }
+        document.getElementById("input-ho-po").value = "";
+        showToast(`Order ${poVal} submitted.`);
+        renderAll();
+      });
+
+      renderAll();
+      pullFromServerIfIdle();
+      setInterval(pullFromServerIfIdle, 6000);
+    });
+  </script>
+</body>
+</html>

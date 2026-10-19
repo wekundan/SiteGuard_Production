@@ -1,12 +1,12 @@
 """
-SiteGuard Machinery Breakdown Tracker - Production FastAPI Backend
-==================================================================
-- Connects to PostgreSQL via DATABASE_URL (supports Render, Railway, Supabase, Neon, and local Postgres;
-  automatically normalizes `postgres://` to `postgresql+psycopg2://`).
-- Falls back to local SQLite (`sqlite:///./siteguard_local.db`) ONLY if DATABASE_URL is not set,
-  so you can also test locally with zero database setup.
-- Automatically creates tables and seeds initial users & construction machines on first startup.
-- Serves all REST API endpoints (`/api/...`) and the live connected Mobile PWA at `/`.
+SiteGuard Machinery Breakdown Tracker - FastAPI backend (SOP workflow)
+=====================================================================
+- PostgreSQL via DATABASE_URL (Render/Neon/Supabase/local); SQLite fallback if unset.
+- Creates tables and seeds demo users, machines and tickets on first startup.
+- Workflow follows the plant breakdown SOP: report -> inspect -> in-house (site store check,
+  requisition, central store dispatch, receipt) or outside (quotation, management approval)
+  -> repair -> cleared -> closure record. Every status change is logged in ticket_events.
+- Serves the REST API (`/api/...`) and the mobile web app at `/`.
 """
 
 from __future__ import annotations
@@ -23,17 +23,18 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path as FilePath
-from typing import Callable, Generator, List, Optional
+from typing import Callable, Generator, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import (
     Date,
     DateTime,
     Enum as SAEnum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -41,6 +42,7 @@ from sqlalchemy import (
     Text,
     create_engine,
     func,
+    inspect,
     text,
 )
 from sqlalchemy.exc import IntegrityError
@@ -54,7 +56,7 @@ from sqlalchemy.orm import (
 )
 
 # ============================================================================
-# 1. Database Configuration (PostgreSQL in Production, SQLite Local Fallback)
+# 1. Database configuration
 # ============================================================================
 
 raw_db_url = os.getenv("DATABASE_URL", "sqlite:///./siteguard_local.db")
@@ -83,15 +85,18 @@ def get_db() -> Generator[Session, None, None]:
 
 
 # ============================================================================
-# 2. Domain Enums
+# 2. Domain enums, workflow rules, SLA
 # ============================================================================
 
 
 class UserRole(str, Enum):
-    SITE_OFFICE = "site_office"
-    SUPERVISOR = "supervisor"
-    HEAD_OFFICE = "head_office"
-    MANAGEMENT = "management"
+    SITE_OFFICE = "site_office"  # Senior Civil Engineer: reports breakdowns
+    DEO = "deo"  # P&M Data Entry Operator: reports, closes the register entry
+    MECH_ENGINEER = "mech_engineer"  # Mechanical Engineer: inspects, repairs
+    PM_INCHARGE = "pm_incharge"  # P&M In-charge: inspects, repairs, closes
+    SITE_STORE = "site_store"  # confirms receipt of spares
+    CENTRAL_STORE = "central_store"  # dispatches spares to site
+    MANAGEMENT = "management"  # approves outside-repair quotations, oversight
 
 
 class MachineStatus(str, Enum):
@@ -101,24 +106,32 @@ class MachineStatus(str, Enum):
 
 class TicketStatus(str, Enum):
     PENDING_INSPECTION = "pending_inspection"
-    PENDING_LOCAL_PART = "pending_local_part"
-    PENDING_HO_ACTION = "pending_ho_action"
-    PENDING_ARRIVAL = "pending_arrival"
-    RESOLVED = "resolved"
+    PENDING_PARTS_CHECK = "pending_parts_check"  # in-house: mechanical team checks site store
+    PENDING_DISPATCH = "pending_dispatch"  # requisition raised, central store to dispatch
+    IN_TRANSIT = "in_transit"  # dispatched, site store to confirm receipt
+    PENDING_QUOTATION = "pending_quotation"  # outside: vendor quotation to be submitted
+    PENDING_APPROVAL = "pending_approval"  # management approves quotation
+    REPAIR_IN_PROGRESS = "repair_in_progress"
+    CLEARED = "cleared"  # breakdown cleared, closure record pending
+    CLOSED = "closed"
 
 
-class ResolutionType(str, Enum):
-    LOCAL = "local"
-    HEAD_OFFICE = "head_office"
+class RepairVenue(str, Enum):
+    IN_HOUSE = "in_house"
+    OUTSIDE = "outside"
 
 
-# Only these ticket transitions are legal; anything else is rejected with 409.
+S = TicketStatus
 ALLOWED_TRANSITIONS = {
-    TicketStatus.PENDING_INSPECTION: {TicketStatus.PENDING_LOCAL_PART, TicketStatus.PENDING_HO_ACTION},
-    TicketStatus.PENDING_LOCAL_PART: {TicketStatus.RESOLVED},
-    TicketStatus.PENDING_HO_ACTION: {TicketStatus.PENDING_ARRIVAL},
-    TicketStatus.PENDING_ARRIVAL: {TicketStatus.RESOLVED},
-    TicketStatus.RESOLVED: set(),
+    S.PENDING_INSPECTION: {S.PENDING_PARTS_CHECK, S.PENDING_QUOTATION},
+    S.PENDING_PARTS_CHECK: {S.REPAIR_IN_PROGRESS, S.PENDING_DISPATCH},
+    S.PENDING_DISPATCH: {S.IN_TRANSIT},
+    S.IN_TRANSIT: {S.REPAIR_IN_PROGRESS},
+    S.PENDING_QUOTATION: {S.PENDING_APPROVAL},
+    S.PENDING_APPROVAL: {S.REPAIR_IN_PROGRESS, S.PENDING_QUOTATION},  # approve / reject
+    S.REPAIR_IN_PROGRESS: {S.CLEARED},
+    S.CLEARED: {S.CLOSED},
+    S.CLOSED: set(),
 }
 
 
@@ -126,32 +139,35 @@ def as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-# SLA targets. Hour-based stages are env-configurable; ETA-based stages are due at the end of
-# the ETA date in the site's timezone (default IST, UTC+5:30).
-SLA_INSPECTION_HOURS = float(os.getenv("SLA_INSPECTION_HOURS", "2"))
-SLA_HO_ACTION_HOURS = float(os.getenv("SLA_HO_ACTION_HOURS", "24"))
-SITE_TZ = timezone(timedelta(minutes=int(os.getenv("SITE_UTC_OFFSET_MINUTES", "330"))))
+# Hours allowed in each stage before it counts as overdue (placeholders; override with env
+# vars such as SLA_PENDING_INSPECTION_HOURS=2).
+_SLA_DEFAULTS = {
+    S.PENDING_INSPECTION: 2,
+    S.PENDING_PARTS_CHECK: 4,
+    S.PENDING_DISPATCH: 24,
+    S.IN_TRANSIT: 48,
+    S.PENDING_QUOTATION: 24,
+    S.PENDING_APPROVAL: 24,
+    S.REPAIR_IN_PROGRESS: 72,
+    S.CLEARED: 24,
+}
+SLA_HOURS = {s: float(os.getenv(f"SLA_{s.name}_HOURS", h)) for s, h in _SLA_DEFAULTS.items()}
+# In these stages an ETA date, when given, replaces the hour limit (due at end of that day).
+ETA_BASED_STAGES = {S.IN_TRANSIT, S.REPAIR_IN_PROGRESS}
+SITE_TZ = timezone(timedelta(minutes=int(os.getenv("SITE_UTC_OFFSET_MINUTES", "330"))))  # IST
 
 
-def sla_due_at(
-    status: TicketStatus,
-    created_at: datetime,
-    ho_received_at: Optional[datetime],
-    eta_date: Optional[date],
-) -> Optional[datetime]:
-    """When the ticket's current stage breaches its SLA (None if the stage has no deadline)."""
-    if status == TicketStatus.PENDING_INSPECTION:
-        return as_utc(created_at) + timedelta(hours=SLA_INSPECTION_HOURS)
-    if status == TicketStatus.PENDING_HO_ACTION:
-        return as_utc(ho_received_at or created_at) + timedelta(hours=SLA_HO_ACTION_HOURS)
-    if status in (TicketStatus.PENDING_LOCAL_PART, TicketStatus.PENDING_ARRIVAL) and eta_date:
+def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Optional[date]) -> Optional[datetime]:
+    if status_ not in SLA_HOURS:
+        return None
+    if status_ in ETA_BASED_STAGES and eta_date:
         end_of_eta = datetime.combine(eta_date + timedelta(days=1), datetime.min.time(), tzinfo=SITE_TZ)
         return end_of_eta.astimezone(timezone.utc)
-    return None
+    return as_utc(stage_entered_at) + timedelta(hours=SLA_HOURS[status_])
 
 
 # ============================================================================
-# Auth helpers (stdlib only): PBKDF2 passwords + HMAC-signed bearer tokens
+# 3. Auth helpers (stdlib only): PBKDF2 passwords + HMAC-signed bearer tokens
 # ============================================================================
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
@@ -192,122 +208,95 @@ def read_token(token: str) -> Optional[str]:
 
 
 # ============================================================================
-# 3. SQLAlchemy ORM Models
+# 4. ORM models
 # ============================================================================
+
+
+def _enum(enum_cls, name):
+    return SAEnum(enum_cls, name=name, values_callable=lambda e: [m.value for m in e])
+
+
+def _uuid() -> str:
+    return str(uuid.uuid4())
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class User(Base):
     __tablename__ = "users"
 
-    user_id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[UserRole] = mapped_column(
-        SAEnum(
-            UserRole,
-            name="user_role",
-            values_callable=lambda enum_cls: [e.value for e in enum_cls],
-        ),
-        nullable=False,
-    )
-
-    reported_tickets: Mapped[List["Ticket"]] = relationship(
-        "Ticket", back_populates="reporter"
-    )
+    role: Mapped[UserRole] = mapped_column(_enum(UserRole, "user_role"), nullable=False)
 
 
 class Machine(Base):
     __tablename__ = "machines"
 
-    machine_id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    machine_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     location: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[MachineStatus] = mapped_column(
-        SAEnum(
-            MachineStatus,
-            name="machine_status",
-            values_callable=lambda enum_cls: [e.value for e in enum_cls],
-        ),
-        nullable=False,
-        default=MachineStatus.ACTIVE,
+        _enum(MachineStatus, "machine_status"), nullable=False, default=MachineStatus.ACTIVE
     )
-
-    tickets: Mapped[List["Ticket"]] = relationship("Ticket", back_populates="machine")
 
 
 class Ticket(Base):
     __tablename__ = "tickets"
-    # DB-level guarantee: at most one unresolved ticket per machine (blocks race conditions).
+    # DB-level guarantee: one active breakdown per machine (blocks race conditions). A machine can
+    # be reported again once its previous breakdown is cleared, even if the register entry is open.
     __table_args__ = (
         Index(
-            "uq_one_open_ticket_per_machine",
+            "uq_one_active_breakdown_per_machine",
             "machine_id",
             unique=True,
-            postgresql_where=text("status <> 'resolved'"),
-            sqlite_where=text("status <> 'resolved'"),
+            postgresql_where=text("status NOT IN ('cleared', 'closed')"),
+            sqlite_where=text("status NOT IN ('cleared', 'closed')"),
         ),
     )
 
-    ticket_id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    ticket_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     machine_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("machines.machine_id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
+        String(36), ForeignKey("machines.machine_id", ondelete="RESTRICT"), nullable=False, index=True
     )
     reported_by: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("users.user_id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
+        String(36), ForeignKey("users.user_id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    issue_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[TicketStatus] = mapped_column(
-        SAEnum(
-            TicketStatus,
-            name="ticket_status",
-            values_callable=lambda enum_cls: [e.value for e in enum_cls],
-        ),
+        _enum(TicketStatus, "ticket_status"),
         nullable=False,
         default=TicketStatus.PENDING_INSPECTION,
         index=True,
     )
-    resolution_type: Mapped[Optional[ResolutionType]] = mapped_column(
-        SAEnum(
-            ResolutionType,
-            name="resolution_type",
-            values_callable=lambda enum_cls: [e.value for e in enum_cls],
-        ),
-        nullable=True,
-    )
-    po_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    issue_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    repair_venue: Mapped[Optional[RepairVenue]] = mapped_column(_enum(RepairVenue, "repair_venue"), nullable=True)
+    # in-house path
+    parts_required: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    dispatch_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # outside path
+    vendor_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    quote_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    quote_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approval_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # ETA of the current stage (spares arrival or vendor completion)
     eta_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    # closure record
+    root_cause: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    repair_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    closure_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        index=True,
-    )
-    inspected_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    ho_received_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    closed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, index=True)
+    stage_entered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+    inspected_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    cleared_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    machine: Mapped["Machine"] = relationship("Machine", back_populates="tickets")
-    reporter: Mapped["User"] = relationship("User", back_populates="reported_tickets")
+    machine: Mapped["Machine"] = relationship("Machine")
+    reporter: Mapped["User"] = relationship("User")
 
 
 class TicketEvent(Base):
@@ -325,81 +314,114 @@ class TicketEvent(Base):
     from_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     to_status: Mapped[str] = mapped_column(String(30), nullable=False)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
 
 
 # ============================================================================
-# 4. Auto-Initialize & Seed Database on First Boot
+# 5. Seed data and startup
 # ============================================================================
+
+U_SITE = "11111111-1111-4111-8111-111111111111"
+U_DEO = "22222222-2222-4222-8222-222222222222"
+U_MECH = "33333333-3333-4333-8333-333333333333"
+U_CENTRAL = "44444444-4444-4444-8444-444444444444"
+U_MGMT = "55555555-5555-4555-8555-555555555555"
+U_PM = "66666666-6666-4666-8666-666666666666"
+U_STORE = "77777777-7777-4777-8777-777777777777"
+
+
+def _m(n: int) -> str:
+    return f"10000000-0000-4000-8000-{n:012d}"
 
 
 def seed_initial_data(db: Session) -> None:
     if db.query(User).count() > 0:
         return
 
-    now = datetime.now(timezone.utc)
+    now = _now()
+    ago = lambda **kw: now - timedelta(**kw)  # noqa: E731
     pw = lambda: hash_password(DEMO_PASSWORD)  # noqa: E731
     users = [
-        User(user_id="11111111-1111-4111-8111-111111111111", name="Ramesh Kumar (Site A)", username="ramesh", password_hash=pw(), role=UserRole.SITE_OFFICE),
-        User(user_id="22222222-2222-4222-8222-222222222222", name="Deepak Verma (Site B)", username="deepak", password_hash=pw(), role=UserRole.SITE_OFFICE),
-        User(user_id="33333333-3333-4333-8333-333333333333", name="Vikram Singh (Supervisor)", username="vikram", password_hash=pw(), role=UserRole.SUPERVISOR),
-        User(user_id="44444444-4444-4444-8444-444444444444", name="Ananya Nair (Head Office)", username="ananya", password_hash=pw(), role=UserRole.HEAD_OFFICE),
-        User(user_id="55555555-5555-4555-8555-555555555555", name="Rajeshwari Iyer (Management)", username="rajeshwari", password_hash=pw(), role=UserRole.MANAGEMENT),
+        User(user_id=U_SITE, name="Ramesh Kumar (Sr Civil Engineer)", username="ramesh", password_hash=pw(), role=UserRole.SITE_OFFICE),
+        User(user_id=U_DEO, name="Deepak Verma (P&M DEO)", username="deepak", password_hash=pw(), role=UserRole.DEO),
+        User(user_id=U_MECH, name="Vikram Singh (Mechanical Engineer)", username="vikram", password_hash=pw(), role=UserRole.MECH_ENGINEER),
+        User(user_id=U_PM, name="Meera Joshi (P&M In-charge)", username="meera", password_hash=pw(), role=UserRole.PM_INCHARGE),
+        User(user_id=U_STORE, name="Suresh Patil (Site Store)", username="suresh", password_hash=pw(), role=UserRole.SITE_STORE),
+        User(user_id=U_CENTRAL, name="Ananya Nair (Central Store)", username="ananya", password_hash=pw(), role=UserRole.CENTRAL_STORE),
+        User(user_id=U_MGMT, name="Rajeshwari Iyer (Management)", username="rajeshwari", password_hash=pw(), role=UserRole.MANAGEMENT),
     ]
+    B, A = MachineStatus.BROKEN_DOWN, MachineStatus.ACTIVE
     machines = [
-        Machine(machine_id="10000000-0000-4000-8000-000000000001", name="Excavator 3000 (CAT 320D)", location="Site A - Zone 1", status=MachineStatus.BROKEN_DOWN),
-        Machine(machine_id="10000000-0000-4000-8000-000000000002", name="Tower Crane TC-6015", location="Site A - Zone 2", status=MachineStatus.BROKEN_DOWN),
-        Machine(machine_id="10000000-0000-4000-8000-000000000003", name="Transit Mixer TM-09", location="Site B - Batching Plant", status=MachineStatus.BROKEN_DOWN),
-        Machine(machine_id="10000000-0000-4000-8000-000000000004", name="Backhoe Loader JCB-3DX", location="Site B - Utility Trench", status=MachineStatus.ACTIVE),
-        Machine(machine_id="10000000-0000-4000-8000-000000000005", name="Motor Grader MG-140", location="Site A - Access Road", status=MachineStatus.ACTIVE),
-        Machine(machine_id="10000000-0000-4000-8000-000000000006", name="Vibro Roller VR-210", location="Site A - Embankment", status=MachineStatus.ACTIVE),
-        Machine(machine_id="10000000-0000-4000-8000-000000000007", name="Concrete Boom Placer BP-42", location="Site B - Podium Slab", status=MachineStatus.ACTIVE),
-        Machine(machine_id="10000000-0000-4000-8000-000000000008", name="Wheel Loader WL-950", location="Site A - Stockpile", status=MachineStatus.ACTIVE),
+        Machine(machine_id=_m(1), name="Excavator 3000 (CAT 320D)", location="Site A - Zone 1", status=B),
+        Machine(machine_id=_m(2), name="Tower Crane TC-6015", location="Site A - Zone 2", status=B),
+        Machine(machine_id=_m(3), name="Transit Mixer TM-09", location="Site B - Batching Plant", status=B),
+        Machine(machine_id=_m(4), name="Backhoe Loader JCB-3DX", location="Site B - Utility Trench", status=B),
+        Machine(machine_id=_m(5), name="Motor Grader MG-140", location="Site A - Access Road", status=B),
+        Machine(machine_id=_m(6), name="Vibro Roller VR-210", location="Site A - Embankment", status=A),
+        Machine(machine_id=_m(7), name="Concrete Boom Placer BP-42", location="Site B - Podium Slab", status=A),
+        Machine(machine_id=_m(8), name="Wheel Loader WL-950", location="Site A - Stockpile", status=A),
     ]
-    tickets = [
-        # Overdue > 2 hours
-        Ticket(
-            ticket_id="90000000-0000-4000-8000-000000000101",
-            machine_id="10000000-0000-4000-8000-000000000001",
-            reported_by="11111111-1111-4111-8111-111111111111",
-            status=TicketStatus.PENDING_INSPECTION,
-            created_at=now - timedelta(hours=3, minutes=20),
-        ),
-        # Recent < 2 hours
-        Ticket(
-            ticket_id="90000000-0000-4000-8000-000000000102",
-            machine_id="10000000-0000-4000-8000-000000000002",
-            reported_by="11111111-1111-4111-8111-111111111111",
-            status=TicketStatus.PENDING_INSPECTION,
-            created_at=now - timedelta(minutes=40),
-        ),
-        # Escalated to HO
-        Ticket(
-            ticket_id="90000000-0000-4000-8000-000000000103",
-            machine_id="10000000-0000-4000-8000-000000000003",
-            reported_by="22222222-2222-4222-8222-222222222222",
-            issue_description="Main planetary drum gearbox bearing seized; requires OEM replacement assembly.",
-            status=TicketStatus.PENDING_HO_ACTION,
-            resolution_type=ResolutionType.HEAD_OFFICE,
-            created_at=now - timedelta(hours=6),
-            inspected_at=now - timedelta(hours=5),
-            ho_received_at=now - timedelta(hours=5),
-        ),
-    ]
-    sup = "33333333-3333-4333-8333-333333333333"
-    ev = lambda tid, actor, frm, to, ago: TicketEvent(  # noqa: E731
-        ticket_id=tid, actor_id=actor, from_status=frm, to_status=to, created_at=now - ago
+
+    tickets, events = [], []
+
+    def add(n: int, machine: int, status_: TicketStatus, steps, **fields):
+        """steps: [(actor, to_status, hours_ago)] oldest first; first step is the report."""
+        tid = f"90000000-0000-4000-8000-{n:012d}"
+        prev = None
+        for actor, to, hrs in steps:
+            events.append(TicketEvent(ticket_id=tid, actor_id=actor, from_status=prev, to_status=to, created_at=ago(hours=hrs)))
+            prev = to
+        tickets.append(
+            Ticket(
+                ticket_id=tid,
+                machine_id=_m(machine),
+                reported_by=steps[0][0],
+                status=status_,
+                created_at=ago(hours=steps[0][2]),
+                stage_entered_at=ago(hours=steps[-1][2]),
+                **fields,
+            )
+        )
+
+    PI, PPC, PD = "pending_inspection", "pending_parts_check", "pending_dispatch"
+    PQ, PA, RIP, CL = "pending_quotation", "pending_approval", "repair_in_progress", "cleared"
+    add(101, 1, S.PENDING_INSPECTION, [(U_SITE, PI, 3.3)])  # overdue
+    add(102, 2, S.PENDING_INSPECTION, [(U_SITE, PI, 0.7)])
+    add(
+        103, 3, S.PENDING_DISPATCH,
+        [(U_DEO, PI, 7), (U_MECH, PPC, 6.5), (U_MECH, PD, 5)],
+        issue_description="Main planetary drum gearbox bearing seized.",
+        repair_venue=RepairVenue.IN_HOUSE,
+        parts_required="OEM planetary gearbox bearing assembly x1 (not in site store)",
+        inspected_at=ago(hours=6.5),
     )
-    events = [
-        ev("90000000-0000-4000-8000-000000000101", "11111111-1111-4111-8111-111111111111", None, "pending_inspection", timedelta(hours=3, minutes=20)),
-        ev("90000000-0000-4000-8000-000000000102", "11111111-1111-4111-8111-111111111111", None, "pending_inspection", timedelta(minutes=40)),
-        ev("90000000-0000-4000-8000-000000000103", "22222222-2222-4222-8222-222222222222", None, "pending_inspection", timedelta(hours=6)),
-        ev("90000000-0000-4000-8000-000000000103", sup, "pending_inspection", "pending_ho_action", timedelta(hours=5)),
-    ]
+    add(
+        104, 4, S.PENDING_APPROVAL,
+        [(U_SITE, PI, 10), (U_PM, PQ, 9), (U_PM, PA, 3)],
+        issue_description="Stabiliser hydraulic cylinder leaking; seals and rod damaged.",
+        repair_venue=RepairVenue.OUTSIDE,
+        vendor_name="Shree Hydraulics, Pune",
+        quote_amount=48500.0,
+        quote_details="Rebuild cylinder, new seal kit, 5 working days",
+        eta_date=date.today() + timedelta(days=5),
+        inspected_at=ago(hours=9),
+    )
+    add(
+        105, 5, S.REPAIR_IN_PROGRESS,
+        [(U_SITE, PI, 14), (U_MECH, PPC, 13), (U_MECH, RIP, 12)],
+        issue_description="Tandem drive chain snapped; link kit in site store.",
+        repair_venue=RepairVenue.IN_HOUSE,
+        inspected_at=ago(hours=13),
+    )
+    add(
+        106, 6, S.CLEARED,
+        [(U_SITE, PI, 28), (U_MECH, PPC, 27), (U_MECH, RIP, 26), (U_MECH, CL, 20)],
+        issue_description="Alternator belt tensioner pulley failed; replaced from site store.",
+        repair_venue=RepairVenue.IN_HOUSE,
+        inspected_at=ago(hours=27),
+        cleared_at=ago(hours=20),
+    )
+
     db.add_all(users)
     db.add_all(machines)
     db.flush()  # parents must exist before dependent rows
@@ -409,29 +431,28 @@ def seed_initial_data(db: Session) -> None:
     db.commit()
 
 
-def sync_demo_passwords(db: Session) -> None:
-    """If DEMO_PASSWORD is set explicitly, make every user's password match it on boot,
-    so changing the env var and redeploying takes effect without wiping data."""
-    wanted = os.getenv("DEMO_PASSWORD")
-    if not wanted:
-        return
-    for user in db.query(User).all():
-        if not verify_password(wanted, user.password_hash):
-            user.password_hash = hash_password(wanted)
-    db.commit()
+def check_schema() -> None:
+    """Fail fast with a clear message if the DB still has the pre-SOP table layout."""
+    insp = inspect(engine)
+    if insp.has_table("tickets") and "repair_venue" not in {c["name"] for c in insp.get_columns("tickets")}:
+        raise RuntimeError(
+            "Database has an old SiteGuard schema. Use a fresh database, or drop the old tables "
+            "(tickets, ticket_events, machines, users and the user_role/machine_status/ticket_status/"
+            "resolution_type enum types) and restart."
+        )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    check_schema()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         seed_initial_data(db)
-        sync_demo_passwords(db)
     yield
 
 
 # ============================================================================
-# 5. Pydantic Schemas
+# 6. Pydantic schemas
 # ============================================================================
 
 
@@ -444,21 +465,49 @@ class TicketCreateRequest(BaseModel):
     machine_id: str
 
 
-class TicketInspectRequest(BaseModel):
+class InspectRequest(BaseModel):
     issue_description: str = Field(..., min_length=3, max_length=2000)
-    resolution_type: ResolutionType
-    eta_date: Optional[date] = None
+    repair_venue: RepairVenue
+
+
+class PartsCheckRequest(BaseModel):
+    available: bool
+    parts_required: Optional[str] = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
-    def validate_sourcing(self) -> "TicketInspectRequest":
-        if self.resolution_type == ResolutionType.LOCAL and self.eta_date is None:
-            raise ValueError("eta_date is required when resolution_type is 'local'.")
+    def need_parts_list(self) -> "PartsCheckRequest":
+        if not self.available and not (self.parts_required or "").strip():
+            raise ValueError("List the parts required when they are not in the site store.")
         return self
 
 
-class TicketHOUpdateRequest(BaseModel):
-    po_details: str = Field(..., min_length=2, max_length=500)
+class DispatchRequest(BaseModel):
+    dispatch_details: str = Field(..., min_length=2, max_length=500)
     eta_date: date
+
+
+class QuotationRequest(BaseModel):
+    vendor_name: str = Field(..., min_length=2, max_length=255)
+    quote_amount: float = Field(..., gt=0)
+    quote_details: Optional[str] = Field(default=None, max_length=1000)
+    eta_date: Optional[date] = None
+
+
+class ApprovalRequest(BaseModel):
+    approved: bool
+    note: Optional[str] = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def rejection_needs_note(self) -> "ApprovalRequest":
+        if not self.approved and not (self.note or "").strip():
+            raise ValueError("Give a reason when rejecting a quotation.")
+        return self
+
+
+class CloseRequest(BaseModel):
+    root_cause: str = Field(..., min_length=3, max_length=1000)
+    repair_cost: float = Field(..., ge=0)
+    closure_notes: Optional[str] = Field(default=None, max_length=1000)
 
 
 class TicketResponse(BaseModel):
@@ -467,34 +516,48 @@ class TicketResponse(BaseModel):
     ticket_id: str
     machine_id: str
     reported_by: str
-    issue_description: Optional[str] = None
     status: TicketStatus
-    resolution_type: Optional[ResolutionType] = None
-    po_details: Optional[str] = None
+    issue_description: Optional[str] = None
+    repair_venue: Optional[RepairVenue] = None
+    parts_required: Optional[str] = None
+    dispatch_details: Optional[str] = None
+    vendor_name: Optional[str] = None
+    quote_amount: Optional[float] = None
+    quote_details: Optional[str] = None
+    approval_note: Optional[str] = None
     eta_date: Optional[date] = None
+    root_cause: Optional[str] = None
+    repair_cost: Optional[float] = None
+    closure_notes: Optional[str] = None
     created_at: datetime
+    stage_entered_at: datetime
     inspected_at: Optional[datetime] = None
-    ho_received_at: Optional[datetime] = None
+    cleared_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
     sla_due_at: Optional[datetime] = None
     is_overdue: bool = False
+    downtime_hours: float = 0.0
+
+    @field_validator("created_at", "stage_entered_at", "inspected_at", "cleared_at", "closed_at")
+    @classmethod
+    def force_utc(cls, v: Optional[datetime]) -> Optional[datetime]:
+        # SQLite returns naive datetimes; without a timezone the browser would read them as local time.
+        return as_utc(v) if v else v
 
     @model_validator(mode="after")
-    def compute_sla(self) -> "TicketResponse":
-        self.sla_due_at = sla_due_at(self.status, self.created_at, self.ho_received_at, self.eta_date)
-        self.is_overdue = self.sla_due_at is not None and datetime.now(timezone.utc) > self.sla_due_at
+    def compute_derived(self) -> "TicketResponse":
+        self.sla_due_at = sla_due_at(self.status, self.stage_entered_at, self.eta_date)
+        self.is_overdue = self.sla_due_at is not None and _now() > self.sla_due_at
+        end = as_utc(self.cleared_at) if self.cleared_at else _now()
+        self.downtime_hours = round((end - as_utc(self.created_at)).total_seconds() / 3600.0, 2)
         return self
 
 
 # ============================================================================
-# 6. FastAPI App & Routes
+# 7. App, auth dependencies, helpers
 # ============================================================================
 
-app = FastAPI(
-    title="SiteGuard Machinery Breakdown Tracker",
-    version="2.0.0",
-    lifespan=lifespan,
-)
+app = FastAPI(title="SiteGuard Machinery Breakdown Tracker", version="3.0.0", lifespan=lifespan)
 
 # The UI is served from the same origin, so CORS is off unless origins are listed explicitly.
 _cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
@@ -508,9 +571,7 @@ if _cors_origins:
     )
 
 
-def get_current_user(
-    authorization: Optional[str] = Header(default=None), db: Session = Depends(get_db)
-) -> User:
+def get_current_user(authorization: Optional[str] = Header(default=None), db: Session = Depends(get_db)) -> User:
     scheme, _, token = (authorization or "").partition(" ")
     user_id = read_token(token) if scheme.lower() == "bearer" else None
     user = db.get(User, user_id) if user_id else None
@@ -528,15 +589,24 @@ def require_roles(*roles: UserRole) -> Callable[..., User]:
     return checker
 
 
-def move_ticket(
-    db: Session, ticket: Ticket, new_status: TicketStatus, actor: User, note: Optional[str] = None
-) -> None:
+MECH = (UserRole.MECH_ENGINEER, UserRole.PM_INCHARGE)
+
+
+def get_ticket(db: Session, ticket_id: str) -> Ticket:
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found.")
+    return ticket
+
+
+def move_ticket(db: Session, ticket: Ticket, new_status: TicketStatus, actor: User, note: Optional[str] = None) -> None:
     """Single entry point for status changes: validates the transition and logs it."""
     if new_status not in ALLOWED_TRANSITIONS[ticket.status]:
         raise HTTPException(
             status_code=409,
             detail=f"Cannot move ticket from '{ticket.status.value}' to '{new_status.value}'.",
         )
+    now = _now()
     db.add(
         TicketEvent(
             ticket_id=ticket.ticket_id,
@@ -544,13 +614,26 @@ def move_ticket(
             from_status=ticket.status.value,
             to_status=new_status.value,
             note=note,
+            created_at=now,
         )
     )
     ticket.status = new_status
+    ticket.stage_entered_at = now
+
+
+def finish(db: Session, ticket: Ticket) -> TicketResponse:
+    db.commit()
+    db.refresh(ticket)
+    return TicketResponse.model_validate(ticket)
 
 
 def user_payload(u: User) -> dict:
     return {"user_id": u.user_id, "name": u.name, "role": u.role.value}
+
+
+# ============================================================================
+# 8. Routes
+# ============================================================================
 
 
 @app.post("/api/auth/login")
@@ -562,16 +645,13 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> dict:
 
 
 @app.get("/api/bootstrap")
-def get_bootstrap_data(
-    me: User = Depends(get_current_user), db: Session = Depends(get_db)
-) -> dict:
-    """Returns the current user, users, machines, and all tickets for multi-device sync."""
-    users = db.query(User).all()
+def get_bootstrap_data(me: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    """Current user, machines and all tickets (one call keeps every device in sync)."""
     machines = db.query(Machine).all()
     tickets = db.query(Ticket).order_by(Ticket.created_at.desc()).all()
     return {
         "me": user_payload(me),
-        "users": [user_payload(u) for u in users],
+        "users": [user_payload(u) for u in db.query(User).all()],
         "machines": [
             {"machine_id": m.machine_id, "name": m.name, "location": m.location, "status": m.status.value}
             for m in machines
@@ -580,181 +660,173 @@ def get_bootstrap_data(
     }
 
 
+# SOP 1: breakdown reported by Senior Civil Engineer or P&M DEO
 @app.post("/api/tickets/create", response_model=TicketResponse, status_code=status.HTTP_201_CREATED)
 def create_ticket(
     payload: TicketCreateRequest,
-    reporter: User = Depends(require_roles(UserRole.SITE_OFFICE, UserRole.SUPERVISOR)),
+    reporter: User = Depends(require_roles(UserRole.SITE_OFFICE, UserRole.DEO)),
     db: Session = Depends(get_db),
 ) -> TicketResponse:
-    machine = db.query(Machine).filter(Machine.machine_id == payload.machine_id).first()
+    machine = db.get(Machine, payload.machine_id)
     if not machine:
         raise HTTPException(status_code=404, detail="Machine not found.")
-
     existing = (
         db.query(Ticket)
-        .filter(Ticket.machine_id == payload.machine_id, Ticket.status != TicketStatus.RESOLVED)
+        .filter(Ticket.machine_id == payload.machine_id, Ticket.status.notin_([S.CLEARED, S.CLOSED]))
         .first()
     )
     if existing:
-        raise HTTPException(status_code=409, detail=f"{machine.name} already has an open ticket.")
+        raise HTTPException(status_code=409, detail=f"{machine.name} already has an open breakdown.")
 
-    new_ticket = Ticket(
-        ticket_id=str(uuid.uuid4()),
-        machine_id=payload.machine_id,
-        reported_by=reporter.user_id,
-        status=TicketStatus.PENDING_INSPECTION,
-        created_at=datetime.now(timezone.utc),
-    )
+    ticket = Ticket(reported_by=reporter.user_id, machine_id=machine.machine_id, status=S.PENDING_INSPECTION)
     machine.status = MachineStatus.BROKEN_DOWN
-    db.add(new_ticket)
+    db.add(ticket)
     db.flush()
-    db.add(
-        TicketEvent(
-            ticket_id=new_ticket.ticket_id,
-            actor_id=reporter.user_id,
-            from_status=None,
-            to_status=TicketStatus.PENDING_INSPECTION.value,
-        )
-    )
+    db.add(TicketEvent(ticket_id=ticket.ticket_id, actor_id=reporter.user_id, from_status=None, to_status=S.PENDING_INSPECTION.value))
     try:
-        db.commit()
+        return finish(db, ticket)
     except IntegrityError:  # two reports raced; the partial unique index caught it
         db.rollback()
-        raise HTTPException(status_code=409, detail=f"{machine.name} already has an open ticket.")
-    db.refresh(new_ticket)
-    return TicketResponse.model_validate(new_ticket)
+        raise HTTPException(status_code=409, detail=f"{machine.name} already has an open breakdown.")
 
 
-@app.get("/api/tickets/queue", response_model=List[TicketResponse])
-def get_role_queue(
-    me: User = Depends(get_current_user), db: Session = Depends(get_db)
-) -> List[TicketResponse]:
-    role = me.role
-    role_map = {
-        UserRole.SITE_OFFICE: [
-            TicketStatus.PENDING_INSPECTION,
-            TicketStatus.PENDING_LOCAL_PART,
-            TicketStatus.PENDING_HO_ACTION,
-            TicketStatus.PENDING_ARRIVAL,
-        ],
-        UserRole.SUPERVISOR: [
-            TicketStatus.PENDING_INSPECTION,
-            TicketStatus.PENDING_LOCAL_PART,
-            TicketStatus.PENDING_ARRIVAL,
-        ],
-        UserRole.HEAD_OFFICE: [TicketStatus.PENDING_HO_ACTION],
-        UserRole.MANAGEMENT: [
-            TicketStatus.PENDING_INSPECTION,
-            TicketStatus.PENDING_LOCAL_PART,
-            TicketStatus.PENDING_HO_ACTION,
-            TicketStatus.PENDING_ARRIVAL,
-        ],
-    }
-    rows = (
-        db.query(Ticket)
-        .filter(Ticket.status.in_(role_map[role]))
-        .order_by(Ticket.created_at.asc())
-        .all()
-    )
-    return [TicketResponse.model_validate(r) for r in rows]
-
-
+# SOP 2-3: inspection and repair venue decision (Mechanical Engineer / P&M In-charge)
 @app.put("/api/tickets/{ticket_id}/inspect", response_model=TicketResponse)
 def inspect_ticket(
     ticket_id: str,
-    payload: TicketInspectRequest,
-    actor: User = Depends(require_roles(UserRole.SUPERVISOR)),
+    payload: InspectRequest,
+    actor: User = Depends(require_roles(*MECH)),
     db: Session = Depends(get_db),
 ) -> TicketResponse:
-    ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id).first()
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found.")
-
-    now_utc = datetime.now(timezone.utc)
+    ticket = get_ticket(db, ticket_id)
+    target = S.PENDING_PARTS_CHECK if payload.repair_venue == RepairVenue.IN_HOUSE else S.PENDING_QUOTATION
     description = payload.issue_description.strip()
-    target = (
-        TicketStatus.PENDING_LOCAL_PART
-        if payload.resolution_type == ResolutionType.LOCAL
-        else TicketStatus.PENDING_HO_ACTION
-    )
-    move_ticket(db, ticket, target, actor, note=description)
+    move_ticket(db, ticket, target, actor, note=f"{payload.repair_venue.value}: {description}")
     ticket.issue_description = description
-    ticket.resolution_type = payload.resolution_type
-    ticket.inspected_at = now_utc
+    ticket.repair_venue = payload.repair_venue
+    ticket.inspected_at = _now()
+    return finish(db, ticket)
 
-    if payload.resolution_type == ResolutionType.LOCAL:
-        ticket.eta_date = payload.eta_date
-        ticket.ho_received_at = None
+
+# SOP 4: site store spare parts check; if unavailable, requisition goes to central store
+@app.put("/api/tickets/{ticket_id}/parts-check", response_model=TicketResponse)
+def parts_check(
+    ticket_id: str,
+    payload: PartsCheckRequest,
+    actor: User = Depends(require_roles(*MECH)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    if payload.available:
+        move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note="Spares available in site store")
     else:
-        ticket.eta_date = None
-        ticket.ho_received_at = now_utc
-
-    db.commit()
-    db.refresh(ticket)
-    return TicketResponse.model_validate(ticket)
+        parts = payload.parts_required.strip()
+        move_ticket(db, ticket, S.PENDING_DISPATCH, actor, note=f"Requisition: {parts}")
+        ticket.parts_required = parts
+    return finish(db, ticket)
 
 
-@app.put("/api/tickets/{ticket_id}/ho-update", response_model=TicketResponse)
-def update_ho_ticket(
+# SOP 5: central store arranges and dispatches spares
+@app.put("/api/tickets/{ticket_id}/dispatch", response_model=TicketResponse)
+def dispatch_spares(
     ticket_id: str,
-    payload: TicketHOUpdateRequest,
-    actor: User = Depends(require_roles(UserRole.HEAD_OFFICE)),
+    payload: DispatchRequest,
+    actor: User = Depends(require_roles(UserRole.CENTRAL_STORE)),
     db: Session = Depends(get_db),
 ) -> TicketResponse:
-    ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id).first()
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found.")
-
-    po = payload.po_details.strip()
-    move_ticket(db, ticket, TicketStatus.PENDING_ARRIVAL, actor, note=po)
-    ticket.po_details = po
+    ticket = get_ticket(db, ticket_id)
+    details = payload.dispatch_details.strip()
+    move_ticket(db, ticket, S.IN_TRANSIT, actor, note=details)
+    ticket.dispatch_details = details
     ticket.eta_date = payload.eta_date
-    db.commit()
-    db.refresh(ticket)
-    return TicketResponse.model_validate(ticket)
+    return finish(db, ticket)
 
 
-@app.put("/api/tickets/{ticket_id}/resolve", response_model=TicketResponse)
-def resolve_ticket(
+# SOP 6: site store confirms receipt of spares
+@app.put("/api/tickets/{ticket_id}/receive", response_model=TicketResponse)
+def receive_spares(
     ticket_id: str,
-    actor: User = Depends(require_roles(UserRole.SUPERVISOR)),
+    actor: User = Depends(require_roles(UserRole.SITE_STORE)),
     db: Session = Depends(get_db),
 ) -> TicketResponse:
-    ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id).first()
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found.")
+    ticket = get_ticket(db, ticket_id)
+    move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note="Spares received at site store")
+    ticket.eta_date = None
+    return finish(db, ticket)
 
-    move_ticket(db, ticket, TicketStatus.RESOLVED, actor)
-    ticket.closed_at = datetime.now(timezone.utc)
-    machine = db.query(Machine).filter(Machine.machine_id == ticket.machine_id).first()
+
+# SOP 7: vendor quotation for outside repair
+@app.put("/api/tickets/{ticket_id}/quotation", response_model=TicketResponse)
+def submit_quotation(
+    ticket_id: str,
+    payload: QuotationRequest,
+    actor: User = Depends(require_roles(*MECH)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    vendor = payload.vendor_name.strip()
+    move_ticket(db, ticket, S.PENDING_APPROVAL, actor, note=f"{vendor}: {payload.quote_amount:,.2f}")
+    ticket.vendor_name = vendor
+    ticket.quote_amount = payload.quote_amount
+    ticket.quote_details = (payload.quote_details or "").strip() or None
+    ticket.eta_date = payload.eta_date
+    ticket.approval_note = None
+    return finish(db, ticket)
+
+
+# SOP 7: management approves (or sends back) the quotation before work starts
+@app.put("/api/tickets/{ticket_id}/approval", response_model=TicketResponse)
+def decide_quotation(
+    ticket_id: str,
+    payload: ApprovalRequest,
+    actor: User = Depends(require_roles(UserRole.MANAGEMENT)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    note = (payload.note or "").strip() or None
+    if payload.approved:
+        move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note=note or "Quotation approved")
+    else:
+        move_ticket(db, ticket, S.PENDING_QUOTATION, actor, note=f"Rejected: {note}")
+    ticket.approval_note = note
+    return finish(db, ticket)
+
+
+# SOP 6/8: mechanical department confirms the breakdown is cleared; machine is active again
+@app.put("/api/tickets/{ticket_id}/clear", response_model=TicketResponse)
+def clear_breakdown(
+    ticket_id: str,
+    actor: User = Depends(require_roles(*MECH)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    move_ticket(db, ticket, S.CLEARED, actor, note="Breakdown cleared")
+    ticket.cleared_at = ticket.stage_entered_at
+    machine = db.get(Machine, ticket.machine_id)
     if machine:
         machine.status = MachineStatus.ACTIVE
-
-    db.commit()
-    db.refresh(ticket)
-    return TicketResponse.model_validate(ticket)
+    return finish(db, ticket)
 
 
-@app.post("/api/reset-demo")
-def reset_demo(
-    _: User = Depends(require_roles(UserRole.MANAGEMENT)), db: Session = Depends(get_db)
-) -> dict:
-    """Wipes all data and re-seeds the demo set. Disable with DEMO_RESET=0."""
-    if os.getenv("DEMO_RESET", "1") == "0":
-        raise HTTPException(status_code=403, detail="Demo reset is disabled.")
-    db.query(TicketEvent).delete()
-    db.query(Ticket).delete()
-    db.query(Machine).delete()
-    db.query(User).delete()
-    db.commit()
-    seed_initial_data(db)
-    return {"ok": True}
+# SOP 9: DEO or P&M In-charge logs downtime, repair cost and root cause to close the report
+@app.put("/api/tickets/{ticket_id}/close", response_model=TicketResponse)
+def close_ticket(
+    ticket_id: str,
+    payload: CloseRequest,
+    actor: User = Depends(require_roles(UserRole.DEO, UserRole.PM_INCHARGE)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    move_ticket(db, ticket, S.CLOSED, actor, note=f"Root cause: {payload.root_cause.strip()}")
+    ticket.root_cause = payload.root_cause.strip()
+    ticket.repair_cost = payload.repair_cost
+    ticket.closure_notes = (payload.closure_notes or "").strip() or None
+    ticket.closed_at = ticket.stage_entered_at
+    return finish(db, ticket)
 
 
 @app.get("/api/tickets/{ticket_id}/events")
-def get_ticket_events(
-    ticket_id: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)
-) -> list:
+def get_ticket_events(ticket_id: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list:
     rows = (
         db.query(TicketEvent, User.name)
         .join(User, User.user_id == TicketEvent.actor_id)
@@ -768,10 +840,24 @@ def get_ticket_events(
             "to_status": e.to_status,
             "actor": name,
             "note": e.note,
-            "created_at": e.created_at.isoformat(),
+            "created_at": as_utc(e.created_at).isoformat(),
         }
         for e, name in rows
     ]
+
+
+@app.post("/api/reset-demo")
+def reset_demo(_: User = Depends(require_roles(UserRole.MANAGEMENT)), db: Session = Depends(get_db)) -> dict:
+    """Wipes all data and re-seeds the demo set. Disable with DEMO_RESET=0."""
+    if os.getenv("DEMO_RESET", "1") == "0":
+        raise HTTPException(status_code=403, detail="Demo reset is disabled.")
+    db.query(TicketEvent).delete()
+    db.query(Ticket).delete()
+    db.query(Machine).delete()
+    db.query(User).delete()
+    db.commit()
+    seed_initial_data(db)
+    return {"ok": True}
 
 
 def stage_average_hours(db: Session) -> dict:
@@ -788,71 +874,44 @@ def stage_average_hours(db: Session) -> dict:
     return {stage: round(total / n, 2) for stage, (total, n) in totals.items()}
 
 
-def overdue_by_stage(db: Session) -> dict:
-    counts: dict = {}
-    for t in db.query(Ticket).filter(Ticket.status != TicketStatus.RESOLVED).all():
-        r = TicketResponse.model_validate(t)
-        if r.is_overdue:
-            counts[r.status.value] = counts.get(r.status.value, 0) + 1
-    return counts
-
-
 @app.get("/api/dashboard/metrics")
 def get_dashboard_metrics(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
-    broken_count = (
-        db.query(func.count(Machine.machine_id))
+    tickets = [TicketResponse.model_validate(t) for t in db.query(Ticket).all()]
+    open_stages = [s.value for s in TicketStatus if s != S.CLOSED]
+    in_stage = {s: 0 for s in open_stages}
+    overdue: dict = {}
+    for t in tickets:
+        if t.status == S.CLOSED:
+            continue
+        in_stage[t.status.value] += 1
+        if t.is_overdue:
+            overdue[t.status.value] = overdue.get(t.status.value, 0) + 1
+
+    cleared = [t for t in tickets if t.cleared_at]
+    closed = [t for t in tickets if t.status == S.CLOSED]
+    return {
+        "total_machines_broken": db.query(func.count(Machine.machine_id))
         .filter(Machine.status == MachineStatus.BROKEN_DOWN)
         .scalar()
-        or 0
-    )
-    status_counts = (
-        db.query(Ticket.status, func.count(Ticket.ticket_id))
-        .filter(Ticket.status != TicketStatus.RESOLVED)
-        .group_by(Ticket.status)
-        .all()
-    )
-    bottlenecks = {
-        "pending_inspection": 0,
-        "pending_local_part": 0,
-        "pending_ho_action": 0,
-        "pending_arrival": 0,
-    }
-    for st, count in status_counts:
-        key = st.value if isinstance(st, TicketStatus) else str(st)
-        bottlenecks[key] = count
-
-    resolved = (
-        db.query(Ticket)
-        .filter(Ticket.status == TicketStatus.RESOLVED, Ticket.closed_at.isnot(None))
-        .all()
-    )
-    avg_hours = None
-    if resolved:
-        total_h = 0.0
-        for t in resolved:
-            c_at = t.created_at if t.created_at.tzinfo else t.created_at.replace(tzinfo=timezone.utc)
-            cl_at = t.closed_at if t.closed_at.tzinfo else t.closed_at.replace(tzinfo=timezone.utc)
-            total_h += (cl_at - c_at).total_seconds() / 3600.0
-        avg_hours = round(total_h / len(resolved), 2)
-
-    return {
-        "total_machines_broken": broken_count,
-        "active_bottlenecks": bottlenecks,
-        "average_resolution_time_hours": avg_hours,
-        "total_resolved_tickets": len(resolved),
+        or 0,
+        "tickets_by_stage": in_stage,
+        "overdue_by_stage": overdue,
+        "average_downtime_hours": round(sum(t.downtime_hours for t in cleared) / len(cleared), 2) if cleared else None,
+        "cleared_tickets": len(cleared),
+        "closed_tickets": len(closed),
+        "total_repair_cost": round(sum(t.repair_cost or 0 for t in closed), 2),
         "stage_average_hours": stage_average_hours(db),
-        "overdue_by_stage": overdue_by_stage(db),
     }
 
 
-# Serve PWA static files & root UI
+# Serve static files & root UI
 STATIC_DIR = FilePath(__file__).parent / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
-def serve_pwa():
+def serve_app():
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
         return FileResponse(str(index_file))

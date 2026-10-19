@@ -1,40 +1,52 @@
 # SiteGuard Breakdown Tracker
 
-FastAPI + Postgres + single-page mobile web app for tracking machinery breakdowns.
+FastAPI + Postgres + single-page mobile web app that follows the plant breakdown SOP.
+
+## Workflow
+1. **Report** (Sr Civil Engineer or P&M DEO) -> 2. **Inspect and decide** (Mechanical Engineer or P&M In-charge): in-house or outside workshop.
+- **In-house:** site store check. Parts available -> repair. Not available -> requisition -> **central store dispatches** -> **site store confirms receipt** -> repair.
+- **Outside:** vendor quotation -> **management approves** (or sends back with a reason) -> repair at vendor.
+3. Mechanical dept marks the **breakdown cleared** (machine active again) -> 4. **DEO or P&M In-charge closes** the register entry with root cause and total repair cost. Downtime is calculated automatically.
+
+A machine can be reported again once its previous breakdown is cleared, even if the register entry is still open.
+Every status change is recorded in `ticket_events` (who, when, from, to, note); the Board tab shows the history.
+
+## Users and roles
+All demo users share the password in the `DEMO_PASSWORD` env var (local default is in `main.py`).
+
+| Username | Role | Can do |
+|---|---|---|
+| `ramesh` | Sr Civil Engineer | Report breakdowns |
+| `deepak` | P&M DEO | Report; close register entry |
+| `vikram` | Mechanical Engineer | Inspect, parts check, quotation, mark cleared |
+| `meera` | P&M In-charge | Same as mechanical engineer, plus close register entry |
+| `suresh` | Site Store | Confirm receipt of spares |
+| `ananya` | Central Store | Dispatch spares |
+| `rajeshwari` | Management | Approve quotations, dashboard, reset demo |
+
+Passwords are applied only when the database is first seeded. Everyone can see the Board; roles are enforced by the server.
+
+## SLAs
+Shown as "Due in / Overdue" badges, computed on the server. Hours per stage default to: inspection 2, site store check 4,
+central store dispatch 24, in transit 48, quotation 24, approval 24, repair 72, record closure 24 (placeholders).
+Override with env vars like `SLA_PENDING_INSPECTION_HOURS`. In transit and repair use the ETA date (end of day, `SITE_UTC_OFFSET_MINUTES`,
+default 330 = IST) when one is entered. Alerts (WhatsApp/email) are not built yet.
 
 ## Free demo deployment (Render free web + Neon free Postgres)
-1. Create a free project at [neon.tech](https://neon.tech) and copy its connection string
-   (looks like `postgresql://user:pass@host/db?sslmode=require`).
+1. Create a free project at [neon.tech](https://neon.tech) and copy its connection string.
 2. Push this folder to GitHub.
-3. On [Render](https://render.com): **New + -> Blueprint** -> select the repo -> when prompted,
-   paste the Neon string into `DATABASE_URL` -> **Apply**.
-4. Open the Render URL on any phone. Tables and demo data are created on first boot.
+3. On [Render](https://render.com): **New + -> Blueprint** -> select the repo -> paste the Neon string into `DATABASE_URL`
+   and set `DEMO_PASSWORD` -> **Apply**.
+4. Open the Render URL on a phone.
 
-Login: users `ramesh`, `deepak` (site office), `vikram` (supervisor), `ananya` (head office),
-`rajeshwari` (management). Their password is the `DEMO_PASSWORD` env var (set it in Render before
-first boot; default is `siteguard123` when unset). If `DEMO_PASSWORD` is set, every user's password is
-synced to it on each boot: change the variable and redeploy to change passwords. Set `SECRET_KEY` too
-(the blueprint generates one).
-
-Roles: site office/supervisor report; supervisor inspects and marks working; head office raises POs;
-management sees the dashboard and can reset the demo. Every status change is logged in `ticket_events`.
-
-SLAs (shown as "Due in / Overdue" badges, computed on the server):
-- Inspection: `SLA_INSPECTION_HOURS` (default 2) from report time.
-- Head office action: `SLA_HO_ACTION_HOURS` (default 24, placeholder) from escalation time.
-- Local part / in transit: end of the ETA date in the site timezone (`SITE_UTC_OFFSET_MINUTES`, default 330 = IST).
-Alerts (WhatsApp/email) are not built yet; overdue shows in the app only.
-
-Schema changes: tables are created with `create_all` and are not migrated. If you already ran an older
-version against a database, drop its tables (or use a fresh Neon DB) before deploying this version.
-
-Smoke test (API rules + roles): `pip install httpx` then `python smoke_test.py`.
+**Upgrading an existing deployment:** this version changes the database layout. Create a fresh Neon database (or run
+`DROP SCHEMA public CASCADE; CREATE SCHEMA public;` in Neon's SQL editor) and update `DATABASE_URL`. The app refuses to start
+on the old layout and says so in the logs.
 
 Notes:
-- Free Render service sleeps after ~15 min idle (first load takes ~30s). Optional: ping the URL
-  every 5 min with UptimeRobot to keep it awake.
-- Do not use Render's free Postgres: it is deleted after ~30 days.
-- The **Reset Demo** button wipes all data and re-seeds. Set env var `DEMO_RESET=0` to disable.
+- Free Render service sleeps after ~15 min idle (first load ~30s). Optional: ping it every 5 min with UptimeRobot.
+- Don't use Render's free Postgres: it is deleted after ~30 days.
+- **Reset Demo** (management) wipes all data and re-seeds. Set `DEMO_RESET=0` to disable.
 - No login rate-limiting yet, and tokens live in browser localStorage. Fine for a demo with fake data.
 
 ## Run locally
@@ -42,5 +54,7 @@ Notes:
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
-Without `DATABASE_URL` it uses a local SQLite file. `docker compose up --build` runs Postgres + app.
-To test from a phone, open `http://<laptop-ip>:8000` on the same Wi-Fi.
+Without `DATABASE_URL` it uses a local SQLite file (delete `siteguard_local.db` after pulling schema changes).
+`docker compose up --build` runs Postgres + app. For phone testing open `http://<laptop-ip>:8000` on the same Wi-Fi.
+
+Smoke test (workflow, roles, SLA, metrics): `pip install httpx` then `python smoke_test.py`.

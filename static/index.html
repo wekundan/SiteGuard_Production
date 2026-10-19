@@ -10,21 +10,15 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <style>
-    body {
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    }
-    @keyframes pulseRedBorder {
-      0%, 100% { border-color: #ef4444; }
-      50% { border-color: #fca5a5; }
-    }
-    .overdue-border {
-      animation: pulseRedBorder 1.5s infinite ease-in-out;
-    }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    @keyframes pulseRedBorder { 0%, 100% { border-color: #ef4444; } 50% { border-color: #fca5a5; } }
+    .overdue-border { animation: pulseRedBorder 1.5s infinite ease-in-out; }
+    .field { width: 100%; border-radius: 0.75rem; border: 2px solid #cbd5e1; background: #fff; padding: 0.6rem 0.75rem; font-size: 0.875rem; font-weight: 600; }
+    .field:focus { border-color: #0f172a; outline: none; }
   </style>
 </head>
 <body class="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
 
-  <!-- Simple Clean Header -->
   <header class="bg-slate-900 text-white sticky top-0 z-30 shadow">
     <div class="max-w-4xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
       <div class="flex items-center gap-2.5 shrink-0">
@@ -33,65 +27,15 @@
       </div>
       <div id="user-bar" class="hidden flex items-center gap-1.5 min-w-0">
         <span id="user-label" class="text-xs font-semibold text-slate-300 truncate max-w-[80px] sm:max-w-none"></span>
-        <button
-          id="btn-reset-demo"
-          type="button"
-          class="hidden px-3 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700"
-        >
-          Reset Demo
-        </button>
-        <button
-          id="btn-logout"
-          type="button"
-          class="px-2 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap"
-        >
-          Log out
-        </button>
+        <button id="btn-reset-demo" type="button" class="hidden px-2 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap">Reset Demo</button>
+        <button id="btn-logout" type="button" class="px-2 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap">Log out</button>
       </div>
     </div>
-
-    <!-- Role Navigation Bar (only tabs allowed for the logged-in role are shown) -->
     <nav id="main-nav" class="hidden bg-slate-950 border-t border-slate-800">
-      <div class="max-w-4xl mx-auto flex text-center">
-        <button
-          id="tab-site_office"
-          type="button"
-          data-role-tab="site_office"
-          class="py-3 text-xs sm:text-sm font-bold border-b-2 border-amber-400 text-amber-300 bg-slate-900"
-        >
-          1. Report
-        </button>
-        <button
-          id="tab-supervisor"
-          type="button"
-          data-role-tab="supervisor"
-          class="py-3 text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-white flex items-center justify-center gap-1.5"
-        >
-          <span>2. Inspect</span>
-          <span id="badge-supervisor-count" class="px-1.5 py-0.2 rounded-full text-[11px] bg-red-600 text-white">2</span>
-        </button>
-        <button
-          id="tab-head_office"
-          type="button"
-          data-role-tab="head_office"
-          class="py-3 text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-white flex items-center justify-center gap-1.5"
-        >
-          <span>3. Head Office</span>
-          <span id="badge-ho-count" class="px-1.5 py-0.2 rounded-full text-[11px] bg-purple-600 text-white">1</span>
-        </button>
-        <button
-          id="tab-management"
-          type="button"
-          data-role-tab="management"
-          class="py-3 text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-white"
-        >
-          4. Dashboard
-        </button>
-      </div>
+      <div id="nav-tabs" class="max-w-4xl mx-auto flex text-center"></div>
     </nav>
   </header>
 
-  <!-- Simple Status Toast -->
   <div id="toast-container" class="max-w-xl mx-auto w-full px-4 pt-4 hidden">
     <div id="toast-box" class="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border shadow-sm text-sm font-bold">
       <span id="toast-message"></span>
@@ -99,15 +43,11 @@
     </div>
   </div>
 
-  <!-- Main Content Area -->
-  <!-- Login -->
   <section id="login-view" class="flex-1 max-w-sm w-full mx-auto px-4 py-10">
     <form id="form-login" class="bg-white rounded-3xl shadow-md border border-slate-200 p-6 space-y-4">
       <h2 class="text-xl font-black text-slate-900 text-center">Log in</h2>
-      <input id="login-username" type="text" autocomplete="username" autocapitalize="none" placeholder="Username" required
-        class="w-full rounded-2xl border-2 border-slate-300 px-4 py-3 text-base font-semibold focus:border-slate-900 focus:outline-none" />
-      <input id="login-password" type="password" autocomplete="current-password" placeholder="Password" required
-        class="w-full rounded-2xl border-2 border-slate-300 px-4 py-3 text-base font-semibold focus:border-slate-900 focus:outline-none" />
+      <input id="login-username" type="text" autocomplete="username" autocapitalize="none" placeholder="Username" required class="field text-base" />
+      <input id="login-password" type="password" autocomplete="current-password" placeholder="Password" required class="field text-base" />
       <div id="login-error" class="hidden text-sm font-bold text-red-700"></div>
       <button type="submit" class="w-full py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black">Log in</button>
     </form>
@@ -115,267 +55,150 @@
 
   <main id="main-wrapper" class="hidden flex-1 max-w-4xl w-full mx-auto px-4 py-6">
 
-    <!-- =====================================================================
-         VIEW 1: SITE OFFICE (EXTREMELY SIMPLE MOBILE VIEW)
-    ===================================================================== -->
-    <section id="view-site_office" class="max-w-md mx-auto">
+    <!-- Report a breakdown (Sr Civil Engineer / DEO) -->
+    <section id="view-report" class="max-w-md mx-auto hidden">
       <div class="bg-white rounded-3xl shadow-md border border-slate-200 p-6 space-y-6">
-        <h2 class="text-xl font-black text-slate-900 text-center">Report Breakdown</h2>
-
+        <h2 class="text-xl font-black text-center">Report Breakdown</h2>
         <form id="form-create-breakdown" class="space-y-6">
           <div>
-            <label for="select-machine" class="block text-sm font-bold text-slate-600 mb-2">
-              Machine Name
-            </label>
-            <select
-              id="select-machine"
-              class="w-full rounded-2xl border-2 border-slate-300 bg-slate-50 px-4 py-4 text-base font-bold text-slate-900 focus:border-slate-900 focus:bg-white focus:outline-none"
-            ></select>
+            <label for="select-machine" class="block text-sm font-bold text-slate-600 mb-2">Machine Name</label>
+            <select id="select-machine" class="w-full rounded-2xl border-2 border-slate-300 bg-slate-50 px-4 py-4 text-base font-bold focus:border-slate-900 focus:bg-white focus:outline-none"></select>
           </div>
-
-          <button
-            id="btn-submit-breakdown"
-            type="submit"
-            class="w-full py-6 px-6 rounded-2xl bg-red-600 hover:bg-red-700 active:scale-[0.99] disabled:bg-slate-300 disabled:text-slate-500 text-white font-black text-xl tracking-wide uppercase shadow-lg transition cursor-pointer"
-          >
-            🚨 Report Breakdown
-          </button>
+          <button id="btn-submit-breakdown" type="submit" class="w-full py-6 px-6 rounded-2xl bg-red-600 hover:bg-red-700 active:scale-[0.99] disabled:bg-slate-300 disabled:text-slate-500 text-white font-black text-xl tracking-wide uppercase shadow-lg transition cursor-pointer">🚨 Report Breakdown</button>
         </form>
       </div>
     </section>
 
-    <!-- =====================================================================
-         VIEW 2: SITE SUPERVISOR (SIMPLE MOBILE QUEUE)
-    ===================================================================== -->
-    <section id="view-supervisor" class="max-w-lg mx-auto space-y-4 hidden">
-      <!-- Sub-tabs: Inspect vs Mark Working -->
-      <div class="grid grid-cols-2 gap-2 bg-slate-200 p-1 rounded-2xl">
-        <button
-          id="subtab-pending-inspection"
-          type="button"
-          class="py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-white text-slate-900 shadow-sm"
-        >
-          Needs Inspection (<span id="subtab-badge-inspect">0</span>)
-        </button>
-        <button
-          id="subtab-awaiting-parts"
-          type="button"
-          class="py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600"
-        >
-          Waiting on Parts (<span id="subtab-badge-parts">0</span>)
-        </button>
+    <!-- My tasks: tickets waiting on the logged-in role -->
+    <section id="view-tasks" class="max-w-lg mx-auto space-y-3 hidden"></section>
+
+    <!-- Board: every ticket, read-only, with history -->
+    <section id="view-board" class="space-y-3 hidden">
+      <div class="flex items-center justify-between">
+        <h2 class="text-base font-black">All breakdowns</h2>
+        <label class="text-xs font-bold text-slate-600 flex items-center gap-2"><input id="board-show-closed" type="checkbox" /> Show closed</label>
       </div>
-
-      <!-- Pending Inspection Queue -->
-      <div id="supervisor-inspection-list" class="space-y-3"></div>
-
-      <!-- Waiting on Parts / Mark Working Queue -->
-      <div id="supervisor-parts-list" class="space-y-3 hidden"></div>
+      <div id="board-list" class="space-y-3"></div>
     </section>
 
-    <!-- =====================================================================
-         VIEW 3: HEAD OFFICE (CLEAN DESKTOP TABLE + ORDER FORM)
-    ===================================================================== -->
-    <section id="view-head_office" class="space-y-4 hidden">
+    <!-- Dashboard -->
+    <section id="view-dashboard" class="space-y-6 hidden">
+      <div id="kpi-row" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
       <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-          <h2 class="text-base font-black text-slate-900">Head Office Purchase Order Queue</h2>
-          <span id="ho-queue-header-count" class="text-xs font-bold px-2.5 py-1 rounded-full bg-purple-100 text-purple-900">0 Waiting</span>
-        </div>
-        <div id="ho-table-wrapper" class="overflow-x-auto"></div>
-      </div>
-
-      <!-- Order Form (Shown when a ticket is selected) -->
-      <div id="ho-order-panel" class="bg-white rounded-2xl border-2 border-purple-300 shadow-sm p-5 max-w-xl mx-auto">
-        <div id="ho-selected-summary" class="text-sm font-bold text-slate-900 mb-3"></div>
-        <form id="form-ho-order" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <input
-            id="input-ho-po"
-            type="text"
-            placeholder="Purchase Order Number"
-            class="rounded-xl border-2 border-slate-300 px-3.5 py-3 text-sm font-semibold text-slate-900 focus:border-purple-600 focus:outline-none"
-          />
-          <input
-            id="input-ho-eta"
-            type="date"
-            class="rounded-xl border-2 border-slate-300 px-3.5 py-3 text-sm font-semibold text-slate-900 focus:border-purple-600 focus:outline-none"
-          />
-          <button
-            id="btn-submit-ho-order"
-            type="submit"
-            class="py-3 px-4 rounded-xl bg-purple-700 hover:bg-purple-800 disabled:bg-slate-300 text-white font-black text-sm uppercase shadow cursor-pointer"
-          >
-            Submit Order
-          </button>
-        </form>
+        <div class="px-5 py-4 border-b border-slate-200"><h3 class="text-sm font-black uppercase tracking-wider text-slate-700">Where breakdowns are stuck</h3></div>
+        <div class="overflow-x-auto"><table class="w-full text-left text-sm">
+          <thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500"><th class="py-3 px-4">Stage</th><th class="py-3 px-4 text-right">Open</th><th class="py-3 px-4 text-right">Past SLA</th><th class="py-3 px-4 text-right">Avg hours in stage</th></tr></thead>
+          <tbody id="stage-table" class="divide-y divide-slate-200"></tbody>
+        </table></div>
       </div>
     </section>
-
-    <!-- =====================================================================
-         VIEW 4: MANAGEMENT DASHBOARD (CLEAN HIGH-LEVEL METRICS)
-    ===================================================================== -->
-    <section id="view-management" class="space-y-6 hidden">
-      <!-- 3 Core Metrics Requested -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm text-center">
-          <div class="text-xs font-bold uppercase text-slate-500">Machines Broken</div>
-          <div id="kpi-broken-count" class="text-4xl font-black text-red-600 mt-2">0</div>
-          <div id="kpi-total-fleet" class="text-xs text-slate-400 mt-1">of 8 machines</div>
-        </div>
-
-        <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-          <div class="text-xs font-bold uppercase text-slate-500 text-center mb-2">Active Bottlenecks</div>
-          <div id="kpi-bottleneck-list" class="space-y-1.5 text-sm font-semibold text-slate-800"></div>
-        </div>
-
-        <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm text-center">
-          <div class="text-xs font-bold uppercase text-slate-500">Average Repair Time</div>
-          <div id="kpi-avg-repair" class="text-4xl font-black text-emerald-600 mt-2">—</div>
-          <div id="kpi-resolved-count" class="text-xs text-slate-400 mt-1">0 resolved</div>
-        </div>
-      </div>
-
-      <!-- Simple Aging Table -->
-      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div class="px-5 py-4 border-b border-slate-200">
-          <h3 class="text-sm font-black uppercase tracking-wider text-slate-700">Breakdown Aging List</h3>
-        </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse">
-            <thead>
-              <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500">
-                <th class="py-3 px-4">Machine</th>
-                <th class="py-3 px-4">Status</th>
-                <th class="py-3 px-4">Issue / PO</th>
-                <th class="py-3 px-4">ETA</th>
-                <th class="py-3 px-4 text-right">Age / Repair Time</th>
-              </tr>
-            </thead>
-            <tbody id="aging-table-body" class="divide-y divide-slate-200 text-sm"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
   </main>
 
   <script>
-    // =========================================================================
-    // Default Data (Used when running standalone; overwritten by FastAPI when live)
-    // =========================================================================
-    function daysFromNowDate(days) {
-      const d = new Date(Date.now() + days * 86400 * 1000);
-      return d.toISOString().split("T")[0];
+    // ========================================================================
+    // Constants (the server enforces the same rules)
+    // ========================================================================
+    const TOKEN_KEY = "siteguard_token";
+
+    const STATUS = {
+      pending_inspection: { label: "Needs inspection", cls: "bg-amber-100 text-amber-900" },
+      pending_parts_check: { label: "Site store check", cls: "bg-sky-100 text-sky-900" },
+      pending_dispatch: { label: "Awaiting central store", cls: "bg-purple-100 text-purple-900" },
+      in_transit: { label: "Spares in transit", cls: "bg-indigo-100 text-indigo-900" },
+      pending_quotation: { label: "Needs vendor quotation", cls: "bg-sky-100 text-sky-900" },
+      pending_approval: { label: "Awaiting approval", cls: "bg-purple-100 text-purple-900" },
+      repair_in_progress: { label: "Repair in progress", cls: "bg-blue-100 text-blue-900" },
+      cleared: { label: "Cleared, record pending", cls: "bg-emerald-100 text-emerald-900" },
+      closed: { label: "Closed", cls: "bg-slate-200 text-slate-700" }
+    };
+    const STAGE_ORDER = Object.keys(STATUS).filter((s) => s !== "closed");
+
+    const MECH_TASKS = ["pending_inspection", "pending_parts_check", "pending_quotation", "repair_in_progress"];
+    const TASKS_BY_ROLE = {
+      site_office: [],
+      deo: ["cleared"],
+      mech_engineer: MECH_TASKS,
+      pm_incharge: [...MECH_TASKS, "cleared"],
+      site_store: ["in_transit"],
+      central_store: ["pending_dispatch"],
+      management: ["pending_approval"]
+    };
+    const VIEW_LABEL = { report: "Report", tasks: "My tasks", board: "Board", dashboard: "Dashboard" };
+
+    function viewsFor(role) {
+      const v = [];
+      if (role === "site_office" || role === "deo") v.push("report");
+      if (TASKS_BY_ROLE[role].length) v.push("tasks");
+      v.push("board");
+      if (role === "management" || role === "pm_incharge") v.push("dashboard");
+      return v;
     }
 
-    // Which tabs each role may open (the server enforces the same rules).
-    const VIEWS_BY_ROLE = {
-      site_office: ["site_office"],
-      supervisor: ["site_office", "supervisor"],
-      head_office: ["head_office"],
-      management: ["management"]
-    };
-
-    const STATUS_LABELS = {
-      pending_inspection: { label: "Waiting Inspection", cls: "bg-amber-100 text-amber-900" },
-      pending_local_part: { label: "Waiting Local Part", cls: "bg-sky-100 text-sky-900" },
-      pending_ho_action: { label: "Waiting on HO", cls: "bg-purple-100 text-purple-900" },
-      pending_arrival: { label: "Order Sent (In Transit)", cls: "bg-indigo-100 text-indigo-900" },
-      resolved: { label: "Resolved", cls: "bg-emerald-100 text-emerald-900" }
-    };
-
-    // =========================================================================
-    // State (Persists typed text in `draftDiag` & `draftEta` so inputs NEVER reset)
-    // =========================================================================
     let state = {
-      me: null,
-      machines: [],
-      tickets: [],
-      activeView: "site_office",
-      supervisorTab: "pending_inspection",
-      selectedMachineId: "",
-      inspectingTicketId: null,
-      sourcingModeTicketId: null,
-      selectedHoTicketId: null,
-      draftDiag: {},
-      draftEta: {},
-      lastServerSignature: ""
+      me: null, machines: [], tickets: [], metrics: null,
+      activeView: "report", drafts: {}, openHistory: {}, history: {},
+      selectedMachineId: "", lastServerSignature: "", lastRenderAt: 0
     };
 
-    function formatDateTime(iso) {
-      if (!iso) return "—";
-      const d = new Date(iso);
-      return d.toLocaleString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true
-      });
+    // ========================================================================
+    // Helpers
+    // ========================================================================
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
+    const $ = (id) => document.getElementById(id);
+    const getMachine = (id) => state.machines.find((m) => m.machine_id === id);
+    const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
-    function getElapsedHours(startIso, endIso = null) {
-      if (!startIso) return 0;
-      const start = new Date(startIso).getTime();
-      const end = endIso ? new Date(endIso).getTime() : Date.now();
-      return Math.max(0, (end - start) / (1000 * 3600));
+    function daysFromNowDate(days) {
+      return new Date(Date.now() + days * 86400000).toISOString().split("T")[0];
     }
-
     function formatDuration(hours) {
-      const mins = Math.round((hours || 0) * 60);
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
+      const mins = Math.max(0, Math.round((hours || 0) * 60));
+      const h = Math.floor(mins / 60), m = mins % 60;
+      if (h >= 48) return `${Math.floor(h / 24)}d ${h % 24}h`;
       return h === 0 ? `${m}m` : `${h}h ${m}m`;
     }
-
-    // SLA deadlines are computed by the server (t.sla_due_at / t.is_overdue) so every device agrees.
-    function isTicketOverdue(t) {
-      return !!t.is_overdue;
+    function formatDateTime(iso) {
+      if (!iso) return "—";
+      return new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
     }
+    function hoursSince(iso) { return (Date.now() - new Date(iso).getTime()) / 3600000; }
 
     function slaBadge(t) {
-      if (!t.sla_due_at || t.status === "resolved") return "";
+      if (!t.sla_due_at || t.status === "closed") return "";
       const hrs = (new Date(t.sla_due_at).getTime() - Date.now()) / 3600000;
       const overdue = t.is_overdue || hrs < 0;
       const text = overdue ? `Overdue ${formatDuration(-hrs)}` : `Due in ${formatDuration(hrs)}`;
       const cls = overdue ? "bg-red-600 text-white" : "bg-slate-100 text-slate-700";
       return `<span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-extrabold whitespace-nowrap ${cls}">${text}</span>`;
     }
-
-    function getMachine(id) {
-      return state.machines.find((m) => m.machine_id === id);
+    function statusBadge(t) {
+      const st = STATUS[t.status] || { label: t.status, cls: "bg-slate-100" };
+      return `<span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${st.cls}">${st.label}</span>`;
     }
 
     function showToast(message, isError = false) {
-      const container = document.getElementById("toast-container");
-      const box = document.getElementById("toast-box");
-      document.getElementById("toast-message").textContent = message;
-      box.className = "flex items-center justify-between gap-3 px-4 py-3 rounded-xl border shadow-sm text-sm font-bold " +
+      $("toast-message").textContent = message;
+      $("toast-box").className = "flex items-center justify-between gap-3 px-4 py-3 rounded-xl border shadow-sm text-sm font-bold " +
         (isError ? "bg-red-50 border-red-300 text-red-900" : "bg-emerald-50 border-emerald-300 text-emerald-900");
-      container.classList.remove("hidden");
-      setTimeout(() => container.classList.add("hidden"), 3500);
+      $("toast-container").classList.remove("hidden");
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => $("toast-container").classList.add("hidden"), 4000);
     }
 
-    // =========================================================================
-    // Helper to call live FastAPI server when hosted (with instant local fallback)
-    // =========================================================================
-    const TOKEN_KEY = "siteguard_token";
-
+    // ========================================================================
+    // API
+    // ========================================================================
     class ApiError extends Error {
-      constructor(message, status) {
-        super(message);
-        this.status = status;
-      }
+      constructor(message, status) { super(message); this.status = status; }
     }
-
     function errorText(data) {
       const d = data && data.detail;
       if (typeof d === "string") return d;
-      if (Array.isArray(d)) return d.map((x) => x.msg).join("; ");
+      if (Array.isArray(d)) return d.map((x) => x.msg.replace(/^Value error, /, "")).join("; ");
       return "Request failed.";
     }
-
-    // Always resolves with parsed JSON or throws ApiError with a message safe to show the user.
     async function apiRequest(method, path, body = null) {
       const headers = { "Content-Type": "application/json" };
       const token = localStorage.getItem(TOKEN_KEY);
@@ -395,22 +218,24 @@
       return data;
     }
 
-    function applyBootstrap(data) {
+    async function loadAll() {
+      const data = await apiRequest("GET", "/api/bootstrap");
       state.me = data.me;
-      state.users = data.users;
       state.machines = data.machines;
       state.tickets = data.tickets;
+      state.metrics = viewsFor(data.me.role).includes("dashboard") ? await apiRequest("GET", "/api/dashboard/metrics") : null;
+      return data;
     }
-
     async function refreshFromServer() {
-      applyBootstrap(await apiRequest("GET", "/api/bootstrap"));
+      await loadAll();
       renderAll();
     }
 
     // Runs a server action, then re-syncs. On failure shows the server's reason and re-syncs too.
-    async function act(action, successMessage) {
+    async function act(action, successMessage, ticketId = null) {
       try {
         await action();
+        if (ticketId) Object.keys(state.drafts).filter((k) => k.startsWith(ticketId + ":")).forEach((k) => delete state.drafts[k]);
         showToast(successMessage);
         await refreshFromServer();
         return true;
@@ -421,602 +246,362 @@
       }
     }
 
+    async function pullFromServerIfIdle() {
+      if (!state.me) return;
+      const tag = document.activeElement ? document.activeElement.tagName : "";
+      if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return; // never re-render while typing
+      try {
+        await loadAll();
+        const sig = JSON.stringify({
+          m: state.machines,
+          t: state.tickets.map((x) => [x.ticket_id, x.status, x.is_overdue, x.eta_date, x.approval_note])
+        });
+        // Also re-render about once a minute so "due in / overdue by" labels stay fresh.
+        if (sig !== state.lastServerSignature || Date.now() - state.lastRenderAt > 60000) {
+          state.lastServerSignature = sig;
+          renderAll();
+        }
+      } catch (e) { /* transient network error: keep last data, retry next poll */ }
+    }
+
+    // ========================================================================
+    // Session
+    // ========================================================================
     function showLogin() {
       localStorage.removeItem(TOKEN_KEY);
       state.me = null;
       state.lastServerSignature = "";
-      document.getElementById("login-view").classList.remove("hidden");
-      ["main-wrapper", "main-nav", "user-bar"].forEach((id) => document.getElementById(id).classList.add("hidden"));
+      $("login-view").classList.remove("hidden");
+      ["main-wrapper", "main-nav", "user-bar"].forEach((id) => $(id).classList.add("hidden"));
+    }
+    async function startSession() {
+      await loadAll();
+      const views = viewsFor(state.me.role);
+      state.activeView = views.includes("tasks") ? "tasks" : views[0];
+      $("login-view").classList.add("hidden");
+      ["main-wrapper", "main-nav", "user-bar"].forEach((id) => $(id).classList.remove("hidden"));
+      $("user-label").textContent = state.me.name;
+      $("btn-reset-demo").classList.toggle("hidden", state.me.role !== "management");
+      renderAll();
     }
 
-    function showApp() {
-      document.getElementById("login-view").classList.add("hidden");
-      ["main-wrapper", "main-nav", "user-bar"].forEach((id) => document.getElementById(id).classList.remove("hidden"));
-      document.getElementById("user-label").textContent = state.me.name;
-      document.getElementById("btn-reset-demo").classList.toggle("hidden", state.me.role !== "management");
+    // ========================================================================
+    // Rendering
+    // ========================================================================
+    function tasksFor(role) {
+      const mine = TASKS_BY_ROLE[role];
+      return state.tickets
+        .filter((t) => mine.includes(t.status))
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     }
 
-    async function pullFromServerIfIdle() {
-      if (!state.me) return;
-      // Never re-render while user is typing in any input or textarea!
-      const activeTag = document.activeElement ? document.activeElement.tagName : "";
-      if (activeTag === "TEXTAREA" || activeTag === "INPUT" || activeTag === "SELECT") {
-        return;
-      }
-      try {
-        const data = await apiRequest("GET", "/api/bootstrap");
-        const sig = JSON.stringify({
-          m: data.machines,
-          t: data.tickets.map((x) => [x.ticket_id, x.status, x.po_details, x.issue_description, x.eta_date, x.is_overdue])
-        });
-        // Also re-render about once a minute so "due in / overdue by" labels stay fresh.
-        if (sig !== state.lastServerSignature || Date.now() - (state.lastRenderAt || 0) > 60000) {
-          state.lastServerSignature = sig;
-          applyBootstrap(data);
-          renderAll();
-        }
-      } catch (e) {
-        // transient network error: keep showing last data, retry on next poll
-      }
-    }
-
-    // =========================================================================
-    // Render Views
-    // =========================================================================
     function renderAll() {
       if (!state.me) return;
       state.lastRenderAt = Date.now();
-      const allowedViews = VIEWS_BY_ROLE[state.me.role] || [];
-      if (!allowedViews.includes(state.activeView)) state.activeView = allowedViews[allowedViews.length - 1];
-      const currM = getMachine(state.selectedMachineId);
-      if (!currM || currM.status === "broken_down") {
-        const firstActive = state.machines.find((m) => m.status === "active");
-        state.selectedMachineId = firstActive ? firstActive.machine_id : "";
+      const views = viewsFor(state.me.role);
+      if (!views.includes(state.activeView)) state.activeView = views[0];
+
+      const taskCount = tasksFor(state.me.role).length;
+      $("nav-tabs").innerHTML = views.map((v) => {
+        const active = v === state.activeView;
+        const badge = v === "tasks" && taskCount ? `<span class="px-1.5 rounded-full text-[11px] bg-red-600 text-white">${taskCount}</span>` : "";
+        return `<button type="button" data-view-tab="${v}" class="flex-1 py-3 text-xs sm:text-sm font-bold border-b-2 flex items-center justify-center gap-1.5 ${
+          active ? "border-amber-400 text-amber-300 bg-slate-900" : "border-transparent text-slate-400 hover:text-white"}">${VIEW_LABEL[v]} ${badge}</button>`;
+      }).join("");
+
+      ["report", "tasks", "board", "dashboard"].forEach((v) => $(`view-${v}`).classList.toggle("hidden", v !== state.activeView));
+      if (state.activeView === "report") renderReport();
+      if (state.activeView === "tasks") renderTasks();
+      if (state.activeView === "board") renderBoard();
+      if (state.activeView === "dashboard") renderDashboard();
+    }
+
+    function renderReport() {
+      const sel = $("select-machine");
+      const active = state.machines.filter((m) => m.status === "active");
+      if (!getMachine(state.selectedMachineId) || getMachine(state.selectedMachineId).status !== "active") {
+        state.selectedMachineId = active[0] ? active[0].machine_id : "";
       }
-
-      renderNav();
-      renderSiteOffice();
-      renderSupervisor();
-      renderHeadOffice();
-      renderManagement();
-    }
-
-    function renderNav() {
-      const pendingInspect = state.tickets.filter((t) => t.status === "pending_inspection");
-      const hoQueue = state.tickets.filter((t) => t.status === "pending_ho_action");
-
-      document.getElementById("badge-supervisor-count").textContent = String(pendingInspect.length);
-      document.getElementById("badge-ho-count").textContent = String(hoQueue.length);
-
-      const allowedViews = VIEWS_BY_ROLE[state.me.role] || [];
-      ["site_office", "supervisor", "head_office", "management"].forEach((role) => {
-        const btn = document.getElementById(`tab-${role}`);
-        const sec = document.getElementById(`view-${role}`);
-        const allowed = allowedViews.includes(role);
-        const hidden = allowed ? "" : "hidden ";
-        if (allowed && state.activeView === role) {
-          btn.className = hidden + "flex-1 py-3 text-xs sm:text-sm font-bold border-b-2 border-amber-400 text-amber-300 bg-slate-900 flex items-center justify-center gap-1.5";
-          sec.classList.remove("hidden");
-        } else {
-          btn.className = hidden + "flex-1 py-3 text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-white flex items-center justify-center gap-1.5";
-          sec.classList.add("hidden");
-        }
-      });
-    }
-
-    function renderSiteOffice() {
-      const sel = document.getElementById("select-machine");
-      const activeMachines = state.machines.filter((m) => m.status === "active");
-      if (activeMachines.length === 0) {
+      if (!active.length) {
         sel.innerHTML = `<option value="">All machines are currently broken down</option>`;
-        document.getElementById("btn-submit-breakdown").disabled = true;
       } else {
-        sel.innerHTML = state.machines
-          .map(
-            (m) => `
-            <option value="${m.machine_id}" ${m.status === "broken_down" ? "disabled" : ""} ${
-              m.machine_id === state.selectedMachineId ? "selected" : ""
-            }>
-              ${m.status === "broken_down" ? "🔴 [Broken] " : "🟢 "}${m.name} (${m.location})
-            </option>`
-          )
-          .join("");
-        document.getElementById("btn-submit-breakdown").disabled = false;
+        sel.innerHTML = state.machines.map((m) =>
+          `<option value="${m.machine_id}" ${m.status === "broken_down" ? "disabled" : ""} ${m.machine_id === state.selectedMachineId ? "selected" : ""}>${
+            m.status === "broken_down" ? "🔴 [Broken] " : "🟢 "}${esc(m.name)} (${esc(m.location)})</option>`).join("");
       }
+      $("btn-submit-breakdown").disabled = !active.length;
     }
 
-    function renderSupervisor() {
-      const pendingList = state.tickets
-        .filter((t) => t.status === "pending_inspection")
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    // ---- task cards -------------------------------------------------------
+    const dv = (t, f) => esc(state.drafts[`${t.ticket_id}:${f}`] || "");
+    const input = (t, f, attrs = "", tag = "input") =>
+      tag === "textarea"
+        ? `<textarea data-draft="${t.ticket_id}:${f}" rows="2" ${attrs} class="field">${dv(t, f)}</textarea>`
+        : `<input data-draft="${t.ticket_id}:${f}" value="${dv(t, f)}" ${attrs} class="field" />`;
+    const btn = (action, t, label, color) =>
+      `<button type="button" data-action="${action}" data-ticket="${t.ticket_id}" class="py-3 px-3 rounded-xl font-bold text-xs sm:text-sm text-white ${color}">${label}</button>`;
 
-      const partsList = state.tickets
-        .filter((t) => t.status === "pending_local_part" || t.status === "pending_arrival")
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    function ticketDetails(t) {
+      const rows = [];
+      if (t.issue_description) rows.push(`<div><span class="text-slate-500">Issue:</span> ${esc(t.issue_description)}</div>`);
+      if (t.repair_venue) rows.push(`<div><span class="text-slate-500">Repair:</span> ${t.repair_venue === "in_house" ? "In-house workshop" : "Outside workshop"}</div>`);
+      if (t.parts_required) rows.push(`<div><span class="text-slate-500">Parts required:</span> ${esc(t.parts_required)}</div>`);
+      if (t.dispatch_details) rows.push(`<div><span class="text-slate-500">Dispatch:</span> ${esc(t.dispatch_details)}</div>`);
+      if (t.vendor_name) rows.push(`<div><span class="text-slate-500">Vendor:</span> ${esc(t.vendor_name)} — <strong>${inr(t.quote_amount)}</strong>${t.quote_details ? ` (${esc(t.quote_details)})` : ""}</div>`);
+      if (t.eta_date) rows.push(`<div><span class="text-slate-500">ETA:</span> ${t.eta_date}</div>`);
+      if (t.approval_note) rows.push(`<div class="text-red-700"><span class="font-bold">Management note:</span> ${esc(t.approval_note)}</div>`);
+      if (t.root_cause) rows.push(`<div><span class="text-slate-500">Root cause:</span> ${esc(t.root_cause)}</div>`);
+      if (t.repair_cost != null) rows.push(`<div><span class="text-slate-500">Repair cost:</span> ${inr(t.repair_cost)}</div>`);
+      return rows.length ? `<div class="text-xs text-slate-700 space-y-0.5 mt-2">${rows.join("")}</div>` : "";
+    }
 
-      document.getElementById("subtab-badge-inspect").textContent = String(pendingList.length);
-      document.getElementById("subtab-badge-parts").textContent = String(partsList.length);
-
-      const btnInspect = document.getElementById("subtab-pending-inspection");
-      const btnParts = document.getElementById("subtab-awaiting-parts");
-      const inspectContainer = document.getElementById("supervisor-inspection-list");
-      const partsContainer = document.getElementById("supervisor-parts-list");
-
-      if (state.supervisorTab === "pending_inspection") {
-        btnInspect.className = "py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-white text-slate-900 shadow-sm";
-        btnParts.className = "py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600";
-        inspectContainer.classList.remove("hidden");
-        partsContainer.classList.add("hidden");
-      } else {
-        btnParts.className = "py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-white text-slate-900 shadow-sm";
-        btnInspect.className = "py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600";
-        partsContainer.classList.remove("hidden");
-        inspectContainer.classList.add("hidden");
-      }
-
-      if (pendingList.length === 0) {
-        inspectContainer.innerHTML = `
-          <div class="bg-white rounded-2xl p-8 text-center border border-slate-200 text-sm font-semibold text-slate-500">
-            No machines waiting for inspection.
-          </div>`;
-      } else {
-        inspectContainer.innerHTML = pendingList
-          .map((t) => {
-            const m = getMachine(t.machine_id);
-            const overdue = isTicketOverdue(t);
-            const age = formatDuration(getElapsedHours(t.created_at));
-            const isOpen = state.inspectingTicketId === t.ticket_id;
-            const showLocal = state.sourcingModeTicketId === t.ticket_id;
-            const savedText = state.draftDiag[t.ticket_id] || "";
-            const savedEta = state.draftEta[t.ticket_id] || daysFromNowDate(1);
-
-            return `
-            <div class="bg-white rounded-2xl border-2 shadow-sm overflow-hidden ${
-              overdue ? "overdue-border border-red-500" : isOpen ? "border-slate-900" : "border-slate-200"
-            }">
-              <div
-                data-toggle-inspect="${t.ticket_id}"
-                class="p-4 cursor-pointer flex items-center justify-between gap-3"
-              >
-                <div>
-                  <div class="font-black text-base text-slate-900">${m ? m.name : "Machine"}</div>
-                  <div class="text-xs text-slate-500">${m ? m.location : ""} • Reported ${age} ago</div>
-                </div>
-
-                <div class="flex items-center gap-2">
-                  ${
-                    overdue
-                      ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-red-600 text-white">
-                           <span class="relative flex h-2 w-2">
-                             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-90"></span>
-                             <span class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-                           </span>
-                           Overdue (&gt;2h)
-                         </span>`
-                      : `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900">${age}</span>`
-                  }
-                </div>
-              </div>
-
-              ${
-                isOpen
-                  ? `<div class="p-4 bg-slate-50 border-t border-slate-200 space-y-3">
-                       <textarea
-                         id="diag-input-${t.ticket_id}"
-                         data-diag-ticket="${t.ticket_id}"
-                         rows="2"
-                         placeholder="Enter brief issue description..."
-                         class="w-full rounded-xl border-2 border-slate-300 bg-white p-3 text-sm font-medium text-slate-900 focus:border-slate-900 focus:outline-none"
-                       >${esc(savedText)}</textarea>
-
-                       <div class="grid grid-cols-2 gap-2.5">
-                         <button
-                           type="button"
-                           data-open-local-eta="${t.ticket_id}"
-                           class="py-3 px-3 rounded-xl font-bold text-xs sm:text-sm border-2 ${
-                             showLocal
-                               ? "bg-sky-600 text-white border-sky-600"
-                               : "bg-white text-sky-900 border-sky-300 hover:bg-sky-50"
-                           }"
-                         >
-                           Source Locally
-                         </button>
-
-                         <button
-                           type="button"
-                           data-submit-inspect-ho="${t.ticket_id}"
-                           class="py-3 px-3 rounded-xl font-bold text-xs sm:text-sm bg-purple-700 hover:bg-purple-800 text-white"
-                         >
-                           Escalate to Head Office
-                         </button>
-                       </div>
-
-                       ${
-                         showLocal
-                           ? `<div class="p-3 rounded-xl bg-sky-50 border border-sky-200 flex items-center gap-2">
-                                <input
-                                  id="local-eta-input-${t.ticket_id}"
-                                  data-eta-ticket="${t.ticket_id}"
-                                  type="date"
-                                  value="${savedEta}"
-                                  class="flex-1 rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm font-bold"
-                                />
-                                <button
-                                  type="button"
-                                  data-submit-inspect-local="${t.ticket_id}"
-                                  class="px-4 py-2 rounded-lg bg-sky-700 hover:bg-sky-800 text-white text-sm font-bold"
-                                >
-                                  Save ETA
-                                </button>
-                              </div>`
-                           : ""
-                       }
-                     </div>`
-                  : ""
-              }
+    function taskActions(t) {
+      switch (t.status) {
+        case "pending_inspection":
+          return `${input(t, "issue", 'placeholder="Inspection findings: what is wrong?"', "textarea")}
+            <div class="grid grid-cols-2 gap-2.5">
+              ${btn("inspect_in_house", t, "In-house workshop", "bg-sky-700 hover:bg-sky-800")}
+              ${btn("inspect_outside", t, "Outside workshop", "bg-purple-700 hover:bg-purple-800")}
             </div>`;
-          })
-          .join("");
-      }
-
-      if (partsList.length === 0) {
-        partsContainer.innerHTML = `
-          <div class="bg-white rounded-2xl p-8 text-center border border-slate-200 text-sm font-semibold text-slate-500">
-            No machines currently waiting on parts.
-          </div>`;
-      } else {
-        partsContainer.innerHTML = partsList
-          .map((t) => {
-            const m = getMachine(t.machine_id);
-            return `
-            <div class="bg-white rounded-2xl p-4 border shadow-sm flex items-center justify-between gap-3 ${t.is_overdue ? "border-red-500 border-2" : "border-slate-200"}">
-              <div>
-                <div class="font-black text-base text-slate-900">${m ? m.name : "Machine"}</div>
-                <div class="text-xs text-slate-600 mt-0.5">${esc(t.issue_description)}</div>
-                <div class="text-xs text-slate-500 mt-1">
-                  ${t.po_details ? `PO: <strong>${esc(t.po_details)}</strong> • ` : ""}ETA: <strong>${t.eta_date || "TBD"}</strong>
-                </div>
-                <div class="mt-1.5">${slaBadge(t)}</div>
-              </div>
-              <button
-                type="button"
-                data-resolve-ticket="${t.ticket_id}"
-                class="px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase shrink-0"
-              >
-                ✓ Mark Working
-              </button>
+        case "pending_parts_check":
+          return `<div class="text-xs font-bold text-slate-600">Check the site store for the spare parts.</div>
+            ${input(t, "parts", 'placeholder="If not in stock: list the parts to requisition"', "textarea")}
+            <div class="grid grid-cols-2 gap-2.5">
+              ${btn("parts_available", t, "Parts available", "bg-emerald-600 hover:bg-emerald-700")}
+              ${btn("parts_missing", t, "Raise requisition", "bg-purple-700 hover:bg-purple-800")}
             </div>`;
-          })
-          .join("");
+        case "pending_dispatch":
+          return `${input(t, "dispatch", 'placeholder="Dispatch details: vehicle, docket, quantity"')}
+            <input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta") || daysFromNowDate(2)}" class="field" />
+            ${btn("dispatch", t, "Confirm dispatch", "bg-purple-700 hover:bg-purple-800 w-full")}`;
+        case "in_transit":
+          return btn("receive", t, "Confirm spares received", "bg-emerald-600 hover:bg-emerald-700 w-full");
+        case "pending_quotation":
+          return `${input(t, "vendor", 'placeholder="Vendor name"')}
+            <input data-draft="${t.ticket_id}:amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Quoted amount (₹)" value="${dv(t, "amount")}" class="field" />
+            ${input(t, "qdetails", 'placeholder="Scope, warranty, duration (optional)"')}
+            <input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta")}" class="field" title="Expected completion (optional)" />
+            ${btn("quotation", t, "Submit to management", "bg-purple-700 hover:bg-purple-800 w-full")}`;
+        case "pending_approval":
+          return `${input(t, "note", 'placeholder="Note (required if rejecting)"')}
+            <div class="grid grid-cols-2 gap-2.5">
+              ${btn("approve", t, "Approve", "bg-emerald-600 hover:bg-emerald-700")}
+              ${btn("reject", t, "Reject", "bg-red-600 hover:bg-red-700")}
+            </div>`;
+        case "repair_in_progress":
+          return btn("clear", t, "✓ Mark breakdown cleared", "bg-emerald-600 hover:bg-emerald-700 w-full");
+        case "cleared":
+          return `<div class="text-xs font-bold text-slate-600">Downtime so far: ${formatDuration(t.downtime_hours)}. Log the closure record.</div>
+            ${input(t, "root", 'placeholder="Root cause"', "textarea")}
+            <input data-draft="${t.ticket_id}:cost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Total repair cost (₹)" value="${dv(t, "cost")}" class="field" />
+            ${input(t, "cnotes", 'placeholder="Notes (optional)"')}
+            ${btn("close", t, "Close report", "bg-slate-900 hover:bg-slate-800 w-full")}`;
+        default:
+          return "";
       }
     }
 
-    function renderHeadOffice() {
-      const hoQueue = state.tickets
-        .filter((t) => t.status === "pending_ho_action")
-        .sort((a, b) => new Date(a.ho_received_at || a.created_at) - new Date(b.ho_received_at || b.created_at));
+    function ticketHeader(t) {
+      const m = getMachine(t.machine_id);
+      const age = formatDuration(hoursSince(t.created_at));
+      return `<div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="font-black text-base">${esc(m ? m.name : "Machine")}</div>
+          <div class="text-xs text-slate-500">${esc(m ? m.location : "")} • Reported ${age} ago</div>
+        </div>
+        <div class="flex flex-col items-end gap-1">${statusBadge(t)}${slaBadge(t)}</div>
+      </div>`;
+    }
 
-      document.getElementById("ho-queue-header-count").textContent = `${hoQueue.length} Waiting`;
+    function renderTasks() {
+      const list = tasksFor(state.me.role);
+      $("view-tasks").innerHTML = list.length === 0
+        ? `<div class="bg-white rounded-2xl p-8 text-center border border-slate-200 text-sm font-semibold text-slate-500">Nothing is waiting on you.</div>`
+        : list.map((t) => `
+          <div class="bg-white rounded-2xl p-4 border-2 shadow-sm space-y-3 ${t.is_overdue ? "overdue-border border-red-500" : "border-slate-200"}">
+            ${ticketHeader(t)}${ticketDetails(t)}
+            <div class="space-y-2.5">${taskActions(t)}</div>
+          </div>`).join("");
+    }
 
-      if (!hoQueue.find((t) => t.ticket_id === state.selectedHoTicketId)) {
-        state.selectedHoTicketId = hoQueue[0] ? hoQueue[0].ticket_id : null;
-      }
+    function renderBoard() {
+      const showClosed = $("board-show-closed").checked;
+      const list = state.tickets
+        .filter((t) => showClosed || t.status !== "closed")
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      $("board-list").innerHTML = list.length === 0
+        ? `<div class="bg-white rounded-2xl p-8 text-center border border-slate-200 text-sm font-semibold text-slate-500">No breakdowns.</div>`
+        : list.map((t) => {
+          const open = !!state.openHistory[t.ticket_id];
+          const events = state.history[t.ticket_id];
+          const timeline = open
+            ? `<div class="mt-3 border-t border-slate-200 pt-3 space-y-1.5 text-xs">${
+              !events ? "Loading…" : events.map((e) => `
+                <div class="flex gap-2"><span class="text-slate-400 whitespace-nowrap">${formatDateTime(e.created_at)}</span>
+                <span><strong>${esc((STATUS[e.to_status] || { label: e.to_status }).label)}</strong> — ${esc(e.actor)}${e.note ? `: ${esc(e.note)}` : ""}</span></div>`).join("")}</div>`
+            : "";
+          return `<div class="bg-white rounded-2xl p-4 border shadow-sm ${t.is_overdue ? "border-red-400" : "border-slate-200"}">
+            ${ticketHeader(t)}${ticketDetails(t)}
+            <div class="flex items-center justify-between mt-2">
+              <span class="text-xs text-slate-500">Downtime ${formatDuration(t.downtime_hours)}</span>
+              <button type="button" data-history="${t.ticket_id}" class="text-xs font-bold text-slate-600 underline">${open ? "Hide history" : "History"}</button>
+            </div>${timeline}</div>`;
+        }).join("");
+    }
 
-      const wrapper = document.getElementById("ho-table-wrapper");
-      const orderPanel = document.getElementById("ho-order-panel");
+    function renderDashboard() {
+      const mt = state.metrics;
+      if (!mt) return;
+      const pastSla = Object.values(mt.overdue_by_stage).reduce((a, b) => a + b, 0);
+      const kpi = (label, value, cls = "text-slate-900", sub = "") =>
+        `<div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm text-center">
+          <div class="text-[11px] font-bold uppercase text-slate-500">${label}</div>
+          <div class="text-3xl font-black mt-1 ${cls}">${value}</div><div class="text-xs text-slate-400 mt-0.5">${sub}</div></div>`;
+      $("kpi-row").innerHTML =
+        kpi("Machines broken", mt.total_machines_broken, "text-red-600", `of ${state.machines.length}`) +
+        kpi("Past SLA", pastSla, pastSla ? "text-red-600" : "text-emerald-600") +
+        kpi("Avg downtime", mt.average_downtime_hours == null ? "—" : formatDuration(mt.average_downtime_hours), "text-slate-900", `${mt.cleared_tickets} cleared`) +
+        kpi("Repair cost", inr(mt.total_repair_cost), "text-slate-900", `${mt.closed_tickets} closed`);
+      $("stage-table").innerHTML = STAGE_ORDER.map((s) => {
+        const over = mt.overdue_by_stage[s] || 0;
+        const avg = mt.stage_average_hours[s];
+        return `<tr><td class="py-3 px-4">${statusBadge({ status: s })}</td>
+          <td class="py-3 px-4 text-right font-bold">${mt.tickets_by_stage[s] || 0}</td>
+          <td class="py-3 px-4 text-right font-bold ${over ? "text-red-600" : "text-slate-400"}">${over}</td>
+          <td class="py-3 px-4 text-right text-slate-600">${avg == null ? "—" : formatDuration(avg)}</td></tr>`;
+      }).join("");
+    }
 
-      if (hoQueue.length === 0) {
-        wrapper.innerHTML = `<div class="p-8 text-center text-sm font-semibold text-slate-500">No tickets waiting on Head Office.</div>`;
-        orderPanel.classList.add("hidden");
-      } else {
-        orderPanel.classList.remove("hidden");
-        wrapper.innerHTML = `
-          <table class="w-full text-left border-collapse">
-            <thead>
-              <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500">
-                <th class="py-3 px-4">Machine</th>
-                <th class="py-3 px-4">Issue Description</th>
-                <th class="py-3 px-4">Received At</th>
-                <th class="py-3 px-4 text-right">Select</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-200 text-sm">
-              ${hoQueue
-                .map((t) => {
-                  const m = getMachine(t.machine_id);
-                  const isSel = t.ticket_id === state.selectedHoTicketId;
-                  return `
-                  <tr data-select-ho-ticket="${t.ticket_id}" class="cursor-pointer ${isSel ? "bg-purple-50" : "hover:bg-slate-50"}">
-                    <td class="py-3.5 px-4 font-bold text-slate-900">${m ? m.name : "Machine"}<div class="text-xs font-normal text-slate-500">${m ? m.location : ""}</div></td>
-                    <td class="py-3.5 px-4 text-slate-700">${esc(t.issue_description) || "—"}</td>
-                    <td class="py-3.5 px-4 text-xs text-slate-600 whitespace-nowrap">${formatDateTime(t.ho_received_at)}<div class="mt-1">${slaBadge(t)}</div></td>
-                    <td class="py-3.5 px-4 text-right">
-                      <span class="px-3 py-1 rounded-lg text-xs font-bold ${isSel ? "bg-purple-700 text-white" : "bg-slate-100 text-slate-700"}">
-                        ${isSel ? "Selected" : "Select"}
-                      </span>
-                    </td>
-                  </tr>`;
-                })
-                .join("")}
-            </tbody>
-          </table>`;
+    // ========================================================================
+    // Actions
+    // ========================================================================
+    function field(id, name) {
+      const el = document.querySelector(`[data-draft="${id}:${name}"]`);
+      return el ? el.value.trim() : "";
+    }
+    function fail(msg) { showToast(msg, true); }
 
-        const selTicket = hoQueue.find((t) => t.ticket_id === state.selectedHoTicketId);
-        const selMachine = selTicket ? getMachine(selTicket.machine_id) : null;
-        document.getElementById("ho-selected-summary").textContent = selMachine
-          ? `Order Part for: ${selMachine.name} — "${selTicket.issue_description}"`
-          : "";
-        const etaEl = document.getElementById("input-ho-eta");
-        if (!etaEl.value) etaEl.value = daysFromNowDate(3);
+    async function runTaskAction(action, id) {
+      const put = (path, body) => () => apiRequest("PUT", `/api/tickets/${id}/${path}`, body);
+      switch (action) {
+        case "inspect_in_house":
+        case "inspect_outside": {
+          const issue = field(id, "issue");
+          if (issue.length < 3) return fail("Enter the inspection findings first.");
+          return act(put("inspect", { issue_description: issue, repair_venue: action === "inspect_in_house" ? "in_house" : "outside" }),
+            action === "inspect_in_house" ? "Sent to in-house workshop." : "Sent for outside repair quotation.", id);
+        }
+        case "parts_available":
+          return act(put("parts-check", { available: true }), "Spares available. Repair started.", id);
+        case "parts_missing": {
+          const parts = field(id, "parts");
+          if (!parts) return fail("List the parts to requisition.");
+          return act(put("parts-check", { available: false, parts_required: parts }), "Requisition sent to central store.", id);
+        }
+        case "dispatch": {
+          const details = field(id, "dispatch"), eta = field(id, "eta");
+          if (details.length < 2 || !eta) return fail("Enter dispatch details and the arrival date.");
+          return act(put("dispatch", { dispatch_details: details, eta_date: eta }), "Dispatch recorded.", id);
+        }
+        case "receive":
+          return act(put("receive", null), "Receipt confirmed. Repair started.", id);
+        case "quotation": {
+          const vendor = field(id, "vendor"), amount = parseFloat(field(id, "amount"));
+          if (vendor.length < 2) return fail("Enter the vendor name.");
+          if (!(amount > 0)) return fail("Enter the quoted amount.");
+          return act(put("quotation", { vendor_name: vendor, quote_amount: amount, quote_details: field(id, "qdetails") || null, eta_date: field(id, "eta") || null }),
+            "Quotation sent to management.", id);
+        }
+        case "approve":
+          return act(put("approval", { approved: true, note: field(id, "note") || null }), "Quotation approved.", id);
+        case "reject": {
+          const note = field(id, "note");
+          if (!note) return fail("Give a reason for rejecting.");
+          return act(put("approval", { approved: false, note }), "Quotation sent back.", id);
+        }
+        case "clear":
+          return act(put("clear", null), "Breakdown cleared. Machine is active again.", id);
+        case "close": {
+          const root = field(id, "root"), cost = parseFloat(field(id, "cost"));
+          if (root.length < 3) return fail("Enter the root cause.");
+          if (!(cost >= 0)) return fail("Enter the total repair cost (0 if none).");
+          return act(put("close", { root_cause: root, repair_cost: cost, closure_notes: field(id, "cnotes") || null }), "Report closed.", id);
+        }
       }
     }
 
-    function renderManagement() {
-      const brokenCount = state.machines.filter((m) => m.status === "broken_down").length;
-      document.getElementById("kpi-broken-count").textContent = String(brokenCount);
-      document.getElementById("kpi-total-fleet").textContent = `of ${state.machines.length} machines`;
-
-      const counts = {
-        pending_inspection: 0,
-        pending_local_part: 0,
-        pending_ho_action: 0,
-        pending_arrival: 0
-      };
-      state.tickets.forEach((t) => {
-        if (t.status !== "resolved" && counts[t.status] !== undefined) counts[t.status] += 1;
-      });
-
-      document.getElementById("kpi-bottleneck-list").innerHTML = `
-        <div class="flex justify-between"><span>Waiting on HO:</span><strong class="text-purple-700">${counts.pending_ho_action}</strong></div>
-        <div class="flex justify-between"><span>Waiting on Inspection:</span><strong class="text-amber-600">${counts.pending_inspection}</strong></div>
-        <div class="flex justify-between"><span>Waiting on Parts:</span><strong class="text-sky-700">${counts.pending_local_part + counts.pending_arrival}</strong></div>
-        <div class="flex justify-between border-t border-slate-200 pt-1.5 mt-1.5"><span>Past SLA:</span><strong class="text-red-600">${state.tickets.filter((t) => t.status !== "resolved" && t.is_overdue).length}</strong></div>
-      `;
-
-      const resolved = state.tickets.filter((t) => t.status === "resolved" && t.closed_at && t.created_at);
-      if (resolved.length > 0) {
-        const avgHrs = resolved.reduce((s, t) => s + getElapsedHours(t.created_at, t.closed_at), 0) / resolved.length;
-        document.getElementById("kpi-avg-repair").textContent = `${avgHrs.toFixed(1)}h`;
-      } else {
-        document.getElementById("kpi-avg-repair").textContent = "—";
-      }
-      document.getElementById("kpi-resolved-count").textContent = `${resolved.length} resolved`;
-
-      const tbody = document.getElementById("aging-table-body");
-      tbody.innerHTML = state.tickets
-        .map((t) => {
-          const m = getMachine(t.machine_id);
-          const st = STATUS_LABELS[t.status] || { label: t.status, cls: "bg-slate-100" };
-          const dur = formatDuration(getElapsedHours(t.created_at, t.closed_at));
-          return `
-          <tr>
-            <td class="py-3 px-4 font-bold text-slate-900">${m ? m.name : "Machine"}</td>
-            <td class="py-3 px-4"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold ${st.cls}">${st.label}</span><div class="mt-1">${slaBadge(t)}</div></td>
-            <td class="py-3 px-4 text-xs text-slate-700">${t.po_details ? `<strong>${esc(t.po_details)}</strong> — ` : ""}${esc(t.issue_description) || "Awaiting inspection"}</td>
-            <td class="py-3 px-4 text-xs text-slate-600 whitespace-nowrap">${t.eta_date || "—"}</td>
-            <td class="py-3 px-4 text-right font-bold text-slate-900 whitespace-nowrap">${dur}</td>
-          </tr>`;
-        })
-        .join("");
-    }
-
-    // =========================================================================
-    // Event Listeners
-    // =========================================================================
     window.addEventListener("DOMContentLoaded", () => {
-      // Navigation Tabs
-      document.querySelectorAll("[data-role-tab]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          state.activeView = btn.getAttribute("data-role-tab");
-          renderAll();
-        });
+      $("btn-close-toast").addEventListener("click", () => $("toast-container").classList.add("hidden"));
+
+      $("nav-tabs").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-view-tab]");
+        if (!b) return;
+        state.activeView = b.getAttribute("data-view-tab");
+        renderAll();
       });
 
-      document.getElementById("btn-close-toast").addEventListener("click", () => {
-        document.getElementById("toast-container").classList.add("hidden");
-      });
-
-      // Reset Demo
-      document.getElementById("btn-reset-demo").addEventListener("click", async () => {
+      $("btn-reset-demo").addEventListener("click", async () => {
         if (!confirm("Delete all tickets and restore the demo data?")) return;
-        state.draftDiag = {};
-        state.draftEta = {};
+        state.drafts = {};
         await act(() => apiRequest("POST", "/api/reset-demo"), "Demo data reset.");
       });
 
-      // Login / logout
-      document.getElementById("form-login").addEventListener("submit", async (e) => {
+      $("form-login").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const errEl = document.getElementById("login-error");
+        const errEl = $("login-error");
         errEl.classList.add("hidden");
         try {
           const res = await apiRequest("POST", "/api/auth/login", {
-            username: document.getElementById("login-username").value.trim(),
-            password: document.getElementById("login-password").value
+            username: $("login-username").value.trim(),
+            password: $("login-password").value
           });
           localStorage.setItem(TOKEN_KEY, res.token);
-          document.getElementById("login-password").value = "";
+          $("login-password").value = "";
           await startSession();
         } catch (err) {
           errEl.textContent = err.message;
           errEl.classList.remove("hidden");
         }
       });
-      document.getElementById("btn-logout").addEventListener("click", showLogin);
+      $("btn-logout").addEventListener("click", showLogin);
 
-      // View 1: Select Machine & Report Breakdown
-      document.getElementById("select-machine").addEventListener("change", (e) => {
-        state.selectedMachineId = e.target.value;
-      });
-
-      document.getElementById("form-create-breakdown").addEventListener("submit", async (e) => {
+      $("select-machine").addEventListener("change", (e) => { state.selectedMachineId = e.target.value; });
+      $("form-create-breakdown").addEventListener("submit", async (e) => {
         e.preventDefault();
         const machine = getMachine(state.selectedMachineId);
-        if (!machine || machine.status === "broken_down") return;
-
-        await act(async () => {
-          const created = await apiRequest("POST", "/api/tickets/create", { machine_id: machine.machine_id });
-          state.inspectingTicketId = created.ticket_id;
-        }, `Breakdown reported for ${machine.name}`);
+        if (!machine || machine.status !== "active") return;
+        await act(() => apiRequest("POST", "/api/tickets/create", { machine_id: machine.machine_id }), `Breakdown reported for ${machine.name}`);
       });
 
-      // View 2: Subtabs
-      document.getElementById("subtab-pending-inspection").addEventListener("click", () => {
-        state.supervisorTab = "pending_inspection";
-        renderSupervisor();
+      // Keep typed text across re-renders.
+      $("view-tasks").addEventListener("input", (e) => {
+        const key = e.target.getAttribute("data-draft");
+        if (key) state.drafts[key] = e.target.value;
       });
-      document.getElementById("subtab-awaiting-parts").addEventListener("click", () => {
-        state.supervisorTab = "awaiting_parts";
-        renderSupervisor();
-      });
-
-      // View 2: Preserve typed diagnostic text & ETA in state.draftDiag / state.draftEta on every keystroke!
-      document.getElementById("supervisor-inspection-list").addEventListener("input", (e) => {
-        const diagTicketId = e.target.getAttribute("data-diag-ticket");
-        if (diagTicketId) {
-          state.draftDiag[diagTicketId] = e.target.value;
-        }
-        const etaTicketId = e.target.getAttribute("data-eta-ticket");
-        if (etaTicketId) {
-          state.draftEta[etaTicketId] = e.target.value;
-        }
+      $("view-tasks").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-action]");
+        if (b) runTaskAction(b.getAttribute("data-action"), b.getAttribute("data-ticket"));
       });
 
-      // View 2: Supervisor Click Actions
-      document.getElementById("supervisor-inspection-list").addEventListener("click", async (e) => {
-        // Ignore clicks inside textarea or date input so clicking to type never collapses or resets the card
-        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") {
-          return;
+      $("board-show-closed").addEventListener("change", renderBoard);
+      $("board-list").addEventListener("click", async (e) => {
+        const b = e.target.closest("[data-history]");
+        if (!b) return;
+        const id = b.getAttribute("data-history");
+        state.openHistory[id] = !state.openHistory[id];
+        renderBoard();
+        if (state.openHistory[id]) {
+          try {
+            state.history[id] = await apiRequest("GET", `/api/tickets/${id}/events`);
+            renderBoard();
+          } catch (err) { showToast(err.message, true); }
         }
-
-        const localBtn = e.target.closest("[data-open-local-eta]");
-        if (localBtn) {
-          const tId = localBtn.getAttribute("data-open-local-eta");
-          state.sourcingModeTicketId = tId;
-          renderSupervisor();
-          return;
-        }
-
-        const saveLocalBtn = e.target.closest("[data-submit-inspect-local]");
-        if (saveLocalBtn) {
-          const tId = saveLocalBtn.getAttribute("data-submit-inspect-local");
-          const diag = (state.draftDiag[tId] || document.getElementById(`diag-input-${tId}`)?.value || "").trim();
-          const eta = state.draftEta[tId] || document.getElementById(`local-eta-input-${tId}`)?.value || "";
-          if (diag.length < 3) {
-            showToast("Please enter an issue description first.", true);
-            return;
-          }
-          if (!eta) {
-            showToast("Please select an ETA date.", true);
-            return;
-          }
-
-          const ok = await act(
-            () => apiRequest("PUT", `/api/tickets/${tId}/inspect`, {
-              issue_description: diag,
-              resolution_type: "local",
-              eta_date: eta
-            }),
-            "Saved local part ETA."
-          );
-          if (ok) {
-            delete state.draftDiag[tId];
-            state.sourcingModeTicketId = null;
-            renderAll();
-          }
-          return;
-        }
-
-        const hoBtn = e.target.closest("[data-submit-inspect-ho]");
-        if (hoBtn) {
-          const tId = hoBtn.getAttribute("data-submit-inspect-ho");
-          const diag = (state.draftDiag[tId] || document.getElementById(`diag-input-${tId}`)?.value || "").trim();
-          if (diag.length < 3) {
-            showToast("Please enter an issue description first.", true);
-            return;
-          }
-
-          const ok = await act(
-            () => apiRequest("PUT", `/api/tickets/${tId}/inspect`, {
-              issue_description: diag,
-              resolution_type: "head_office"
-            }),
-            "Escalated to Head Office."
-          );
-          if (ok) {
-            delete state.draftDiag[tId];
-            state.selectedHoTicketId = tId;
-            renderAll();
-          }
-          return;
-        }
-
-        const toggleHeader = e.target.closest("[data-toggle-inspect]");
-        if (toggleHeader) {
-          const tId = toggleHeader.getAttribute("data-toggle-inspect");
-          state.inspectingTicketId = state.inspectingTicketId === tId ? null : tId;
-          state.sourcingModeTicketId = null;
-          renderSupervisor();
-        }
-      });
-
-      // View 2: Mark Machine Working (Resolve)
-      document.getElementById("supervisor-parts-list").addEventListener("click", async (e) => {
-        const resolveBtn = e.target.closest("[data-resolve-ticket]");
-        if (!resolveBtn) return;
-        const tId = resolveBtn.getAttribute("data-resolve-ticket");
-
-        const t = state.tickets.find((x) => x.ticket_id === tId);
-        const m = t ? getMachine(t.machine_id) : null;
-        await act(
-          () => apiRequest("PUT", `/api/tickets/${tId}/resolve`),
-          `${m ? m.name : "Machine"} marked as working!`
-        );
-      });
-
-      // View 3: Head Office Select & Submit Order
-      document.getElementById("ho-table-wrapper").addEventListener("click", (e) => {
-        const row = e.target.closest("[data-select-ho-ticket]");
-        if (!row) return;
-        state.selectedHoTicketId = row.getAttribute("data-select-ho-ticket");
-        renderHeadOffice();
-      });
-
-      document.getElementById("form-ho-order").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const poVal = document.getElementById("input-ho-po").value.trim();
-        const etaVal = document.getElementById("input-ho-eta").value;
-        if (poVal.length < 2 || !etaVal) {
-          showToast("Please enter both PO Number and ETA Date.", true);
-          return;
-        }
-        const tId = state.selectedHoTicketId;
-        const ok = await act(
-          () => apiRequest("PUT", `/api/tickets/${tId}/ho-update`, { po_details: poVal, eta_date: etaVal }),
-          `Order ${poVal} submitted.`
-        );
-        if (ok) document.getElementById("input-ho-po").value = "";
       });
 
       setInterval(pullFromServerIfIdle, 6000);
-      if (localStorage.getItem(TOKEN_KEY)) {
-        startSession().catch(showLogin);
-      } else {
-        showLogin();
-      }
+      if (localStorage.getItem(TOKEN_KEY)) startSession().catch(showLogin);
+      else showLogin();
     });
-
-    async function startSession() {
-      await refreshFromServer();
-      const views = VIEWS_BY_ROLE[state.me.role] || [];
-      state.activeView = views[views.length - 1];
-      showApp();
-      renderAll();
-    }
-
-    function esc(s) {
-      return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-    }
   </script>
 </body>
 </html>

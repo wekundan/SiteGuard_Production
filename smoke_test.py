@@ -30,6 +30,11 @@ with TestClient(main.app) as c:
         check(r.status_code == expect, f"{label} ({r.status_code})")
         return r.json() if r.content else None
 
+    def upload(ticket, who, kind, data, expect, label, name="doc.pdf"):
+        r = c.post(f"/api/tickets/{ticket}/files", params={"kind": kind, "filename": name}, content=data, headers=who)
+        check(r.status_code == expect, f"{label} ({r.status_code})")
+        return r.json() if r.status_code == 201 else None
+
     def tickets(who=None):
         return {t["ticket_id"]: t for t in c.get("/api/bootstrap", headers=who or mgmt).json()["tickets"]}
 
@@ -75,8 +80,20 @@ with TestClient(main.app) as c:
     # --- SOP 7: outside path with quotation approval -----------------------
     t2 = call("POST", "/api/tickets/create", site, 201, "report second machine", {"machine_id": M_OUT})["ticket_id"]
     call("PUT", f"/api/tickets/{t2}/inspect", pm, 200, "P&M in-charge inspects (outside)", {"issue_description": "Engine overhaul", "repair_venue": "outside"})
+    PDF, PNG = b"%PDF-1.4\n%smoke\n", b"\x89PNG\r\n\x1a\nfakeimage"
+    upload(t2, site, "quotation", PDF, 403, "site office cannot attach quotation")
+    upload(t2, mech, "quotation", b"just text", 415, "non PDF/JPG/PNG rejected")
+    upload(t2, mech, "quotation", b"%PDF" + b"0" * (5 * 1024 * 1024), 413, "file over 5 MB rejected")
+    upload(t2, mech, "bill", PDF, 403, "mechanical engineer cannot attach bill")
+    qfile = upload(t2, mech, "quotation", PDF, 201, "quotation document attached", name="../evil name?.pdf")
     quote = {"vendor_name": "Shree Works", "quote_amount": 50000}
     call("PUT", f"/api/tickets/{t2}/quotation", mech, 200, "quotation submitted", quote)
+    upload(t2, mech, "quotation", PDF, 409, "cannot attach after submission")
+    att = tickets()[t2]["files"]
+    check(len(att) == 1 and att[0]["filename"] == "evil name_.pdf" and att[0]["kind"] == "quotation", "attachment listed with safe name")
+    dl = c.get(f"/api/files/{qfile['file_id']}", headers=mgmt)
+    check(dl.status_code == 200 and dl.content == PDF and dl.headers["content-type"] == "application/pdf", "management downloads the quotation")
+    check(c.get(f"/api/files/{qfile['file_id']}").status_code == 401, "download needs login")
     call("PUT", f"/api/tickets/{t2}/approval", pm, 403, "only management approves", {"approved": True})
     call("PUT", f"/api/tickets/{t2}/approval", mgmt, 422, "rejection needs a reason", {"approved": False})
     call("PUT", f"/api/tickets/{t2}/approval", mgmt, 200, "management rejects", {"approved": False, "note": "Too high"})
@@ -85,7 +102,13 @@ with TestClient(main.app) as c:
     call("PUT", f"/api/tickets/{t2}/approval", mgmt, 200, "management approves", {"approved": True})
     call("PUT", f"/api/tickets/{t2}/clear", pm, 200, "vendor repair cleared")
     t3 = call("POST", "/api/tickets/create", site, 201, "can re-report after clearance, before closure", {"machine_id": M_OUT})["ticket_id"]
-    call("PUT", f"/api/tickets/{t2}/close", pm, 200, "P&M in-charge closes", {"root_cause": "Piston wear", "repair_cost": 42000})
+    close2 = {"root_cause": "Piston wear", "repair_cost": 45000, "invoice_number": "INV-77"}
+    call("PUT", f"/api/tickets/{t2}/close", pm, 422, "outside repair needs the vendor bill", close2)
+    upload(t3, pm, "bill", PDF, 409, "bill only on cleared outside repairs")
+    upload(t2, pm, "bill", PNG, 201, "P&M in-charge attaches bill", name="bill.png")
+    call("PUT", f"/api/tickets/{t2}/close", pm, 200, "P&M in-charge closes with bill", close2)
+    row2 = tickets()[t2]
+    check(row2["cost_over_quote"] == 3000 and row2["invoice_number"] == "INV-77" and len(row2["files"]) == 2, "variance over approved quote flagged")
 
     # --- SLA and metrics ---------------------------------------------------
     tk = tickets()
@@ -96,7 +119,7 @@ with TestClient(main.app) as c:
     check(tk[t1]["sla_due_at"] is None, "closed ticket has no SLA")
     m = c.get("/api/dashboard/metrics", headers=pm).json()
     check(m["overdue_by_stage"].get("pending_inspection") == 1, "overdue counts by stage")
-    check(m["closed_tickets"] == 2 and m["total_repair_cost"] == 43200.5, "closed count and total cost")
+    check(m["closed_tickets"] == 2 and m["total_repair_cost"] == 46200.5, "closed count and total cost")
     check(m["tickets_by_stage"]["pending_approval"] == 1 and "pending_inspection" in m["stage_average_hours"], "stage counts and averages")
     check(m["average_downtime_hours"] is not None, "average downtime computed")
 

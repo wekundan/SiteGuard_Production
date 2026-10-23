@@ -11,6 +11,15 @@ FastAPI + Postgres + single-page mobile web app that follows the plant breakdown
 A machine can be reported again once its previous breakdown is cleared, even if the register entry is still open.
 Every status change is recorded in `ticket_events` (who, when, from, to, note); the Board tab shows the history.
 
+## Quotation and bill attachments
+- **Quotation:** while a ticket is awaiting a vendor quotation, the mechanical engineer or P&M In-charge can attach a PDF/JPG/PNG
+  (optional, up to 5 files). Management sees it on the approval card.
+- **Bill:** for outside repairs, the DEO or P&M In-charge must attach the vendor bill (and may enter an invoice number) when closing.
+  The final billed amount is compared with the approved quotation; anything above it is flagged. Set `REQUIRE_BILL_FOR_OUTSIDE=0` to make the bill optional.
+- **Storage:** files are stored in the database (a `ticket_files` table), max 5 MB each (`MAX_UPLOAD_BYTES`). The file type is checked from its contents,
+  and only logged-in users can open files. Neon's free tier is about 0.5 GB shared with everything else, so move to S3/R2 if volume grows
+  (storage is isolated in `upload_file` / `download_file` in `main.py`).
+
 ## Users and roles
 All demo users share the password in the `DEMO_PASSWORD` env var (local default is in `main.py`).
 
@@ -39,7 +48,9 @@ default 330 = IST) when one is entered. Alerts (WhatsApp/email) are not built ye
    and set `DEMO_PASSWORD` -> **Apply**.
 4. Open the Render URL on a phone.
 
-**Upgrading an existing deployment:** this version changes the database layout. Create a fresh Neon database (or run
+**Redeploying over the previous (SOP) version** needs no reset: the new `ticket_files` table and `invoice_number` column are added automatically.
+
+**Upgrading from the very first demo version:** that layout is incompatible. Create a fresh Neon database (or run
 `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` in Neon's SQL editor) and update `DATABASE_URL`. The app refuses to start
 on the old layout and says so in the logs.
 

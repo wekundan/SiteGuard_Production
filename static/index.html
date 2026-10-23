@@ -389,6 +389,8 @@
     const btn = (action, t, label, variant) =>
       `<button type="button" data-action="${action}" data-ticket="${t.ticket_id}" class="btn btn-${variant}">${label}</button>`;
     const lbl = (text) => `<div class="label mb-1.5">${text}</div>`;
+    const upload = (t, kind, label) =>
+      `<div>${lbl(label)}<input type="file" data-upload="${t.ticket_id}:${kind}" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" class="field" style="padding:.5rem;" /></div>`;
     const pair = (a, b) => `<div class="grid grid-cols-2 gap-2.5">${a}${b}</div>`;
 
     function ticketDetails(t) {
@@ -399,10 +401,16 @@
       if (t.parts_required) row("Parts", esc(t.parts_required));
       if (t.dispatch_details) row("Dispatch", esc(t.dispatch_details));
       if (t.vendor_name) row("Vendor", `${esc(t.vendor_name)} — <strong>${inr(t.quote_amount)}</strong>${t.quote_details ? ` <span style="color:var(--muted);">(${esc(t.quote_details)})</span>` : ""}`);
+      if (t.files && t.files.length) {
+        row("Files", t.files.map((f) =>
+          `<button type="button" data-file="${f.file_id}" class="underline underline-offset-2" style="color:var(--navy);">${esc(f.filename)}</button> <span style="color:var(--muted);">(${f.kind})</span>`).join(", "));
+      }
       if (t.eta_date) row("ETA", t.eta_date);
       if (t.approval_note) rows.push(`<div class="rounded-lg px-3 py-2 mt-1" style="background:#fdeef1; color:#9f1239;"><strong>Management note:</strong> ${esc(t.approval_note)}</div>`);
       if (t.root_cause) row("Root cause", esc(t.root_cause));
+      if (t.invoice_number) row("Invoice", esc(t.invoice_number));
       if (t.repair_cost != null) row("Repair cost", inr(t.repair_cost));
+      if (t.cost_over_quote) rows.push(`<div class="rounded-lg px-3 py-2 mt-1" style="background:#fdeef1; color:#9f1239;"><strong>${inr(t.cost_over_quote)} over</strong> the approved quotation.</div>`);
       return rows.length ? `<div class="text-[13px] space-y-1 mt-3">${rows.join("")}</div>` : "";
     }
 
@@ -426,18 +434,23 @@
             <input data-draft="${t.ticket_id}:amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Quoted amount (₹)" value="${dv(t, "amount")}" class="field" />
             ${input(t, "qdetails", 'placeholder="Scope, warranty, duration (optional)"')}
             <div>${lbl("Expected completion (optional)")}<input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta")}" class="field" /></div>
+            ${upload(t, "quotation", "Quotation document: PDF or photo, max 5 MB (optional)")}
             ${btn("quotation", t, "Submit to management", "primary")}`;
         case "pending_approval":
           return `${input(t, "note", 'placeholder="Note (required if rejecting)"')}
             ${pair(btn("approve", t, "Approve", "success"), btn("reject", t, "Reject", "danger"))}`;
         case "repair_in_progress":
           return btn("clear", t, "Mark breakdown cleared", "success");
-        case "cleared":
-          return `<div class="text-[13px]" style="color:var(--muted);">Downtime: <strong style="color:var(--ink);">${formatDuration(t.downtime_hours)}</strong>. Log the closure record.</div>
+        case "cleared": {
+          const outside = t.repair_venue === "outside";
+          return `<div class="text-[13px]" style="color:var(--muted);">Downtime: <strong style="color:var(--ink);">${formatDuration(t.downtime_hours)}</strong>. Log the closure record.${
+            outside ? ` Approved quotation: <strong style="color:var(--ink);">${inr(t.quote_amount)}</strong>.` : ""}</div>
             ${input(t, "root", 'placeholder="Root cause"', "textarea")}
-            <input data-draft="${t.ticket_id}:cost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Total repair cost (₹)" value="${dv(t, "cost")}" class="field" />
+            ${outside ? upload(t, "bill", "Vendor bill: PDF or photo, max 5 MB (required)") + input(t, "invoice", 'placeholder="Invoice number (optional)"') : ""}
+            <input data-draft="${t.ticket_id}:cost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="${outside ? "Final billed amount (₹)" : "Total repair cost (₹)"}" value="${dv(t, "cost")}" class="field" />
             ${input(t, "cnotes", 'placeholder="Notes (optional)"')}
             ${btn("close", t, "Close report", "primary")}`;
+        }
         default:
           return "";
       }
@@ -565,15 +578,64 @@
         case "clear":
           return act(put("clear", null), "Breakdown cleared. Machine is active again.", id);
         case "close": {
+          const t = state.tickets.find((x) => x.ticket_id === id);
           const root = field(id, "root"), cost = parseFloat(field(id, "cost"));
           if (root.length < 3) return fail("Enter the root cause.");
+          if (t && t.repair_venue === "outside" && !t.files.some((f) => f.kind === "bill")) return fail("Attach the vendor bill first.");
           if (!(cost >= 0)) return fail("Enter the total repair cost (0 if none).");
-          return act(put("close", { root_cause: root, repair_cost: cost, closure_notes: field(id, "cnotes") || null }), "Report closed.", id);
+          return act(put("close", { root_cause: root, repair_cost: cost, invoice_number: field(id, "invoice") || null, closure_notes: field(id, "cnotes") || null }), "Report closed.", id);
         }
       }
     }
 
+    // ---- attachments: raw-body upload and authenticated viewing ---------------
+    const MAX_UPLOAD_MB = 5;
+
+    async function uploadFile(inputEl) {
+      const [id, kind] = inputEl.getAttribute("data-upload").split(":");
+      const file = inputEl.files[0];
+      if (!file) return;
+      if (file.size > MAX_UPLOAD_MB * 1024 * 1024) { inputEl.value = ""; return fail(`File is larger than ${MAX_UPLOAD_MB} MB.`); }
+      showToast("Uploading…");
+      try {
+        const res = await fetch(`/api/tickets/${id}/files?kind=${kind}&filename=${encodeURIComponent(file.name)}`, {
+          method: "POST",
+          headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY), "Content-Type": "application/octet-stream" },
+          body: file
+        });
+        const data = await res.json().catch(() => null);
+        if (res.status === 401) { showLogin(); return; }
+        if (!res.ok) throw new ApiError(errorText(data), res.status);
+        showToast("File attached.");
+        await refreshFromServer();
+      } catch (e) {
+        inputEl.value = "";
+        showToast(e instanceof ApiError ? e.message : "Upload failed. Check your connection and try again.", true);
+      }
+    }
+
+    async function openFile(fileId) {
+      const win = window.open("", "_blank"); // opened synchronously so the popup blocker allows it
+      try {
+        const res = await fetch(`/api/files/${fileId}`, { headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) } });
+        if (!res.ok) throw new Error();
+        const url = URL.createObjectURL(await res.blob());
+        if (win) win.location = url;
+        else { const a = document.createElement("a"); a.href = url; a.download = ""; a.click(); }
+      } catch (e) {
+        if (win) win.close();
+        fail("Could not open the file.");
+      }
+    }
+
     window.addEventListener("DOMContentLoaded", () => {
+      document.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-file]");
+        if (b) openFile(b.getAttribute("data-file"));
+      });
+      $("view-tasks").addEventListener("change", (e) => {
+        if (e.target.matches("[data-upload]")) uploadFile(e.target);
+      });
       $("btn-close-toast").addEventListener("click", () => $("toast-container").classList.add("hidden"));
 
       $("nav-tabs").addEventListener("click", (e) => {

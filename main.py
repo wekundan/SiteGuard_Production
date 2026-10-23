@@ -23,11 +23,11 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path as FilePath
-from typing import Callable, Generator, Optional
+from typing import Callable, Generator, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import (
@@ -38,6 +38,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     create_engine,
@@ -52,6 +53,7 @@ from sqlalchemy.orm import (
     Session,
     mapped_column,
     relationship,
+    selectinload,
     sessionmaker,
 )
 
@@ -288,6 +290,7 @@ class Ticket(Base):
     root_cause: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     repair_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     closure_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    invoice_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, index=True)
     stage_entered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
@@ -297,6 +300,27 @@ class Ticket(Base):
 
     machine: Mapped["Machine"] = relationship("Machine")
     reporter: Mapped["User"] = relationship("User")
+    files: Mapped[List["TicketFile"]] = relationship("TicketFile", order_by="TicketFile.uploaded_at")
+
+
+class TicketFile(Base):
+    """Vendor quotation / bill attachments, stored in the database (see storage notes in README)."""
+
+    __tablename__ = "ticket_files"
+
+    file_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    ticket_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # "quotation" | "bill"
+    filename: Mapped[str] = mapped_column(String(150), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, deferred=True)  # not loaded with listings
+    uploaded_by: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.user_id", ondelete="RESTRICT"), nullable=False
+    )
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
 
 
 class TicketEvent(Base):
@@ -442,10 +466,19 @@ def check_schema() -> None:
         )
 
 
+def add_missing_columns() -> None:
+    """Tiny forward migration for databases created before a column existed (create_all skips those)."""
+    cols = {c["name"] for c in inspect(engine).get_columns("tickets")}
+    with engine.begin() as conn:
+        if "invoice_number" not in cols:
+            conn.execute(text("ALTER TABLE tickets ADD COLUMN invoice_number VARCHAR(100)"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     check_schema()
     Base.metadata.create_all(bind=engine)
+    add_missing_columns()
     with SessionLocal() as db:
         seed_initial_data(db)
     yield
@@ -506,8 +539,24 @@ class ApprovalRequest(BaseModel):
 
 class CloseRequest(BaseModel):
     root_cause: str = Field(..., min_length=3, max_length=1000)
-    repair_cost: float = Field(..., ge=0)
+    repair_cost: float = Field(..., ge=0)  # for outside repairs: the final billed amount
+    invoice_number: Optional[str] = Field(default=None, max_length=100)
     closure_notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class FileInfo(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    file_id: str
+    kind: str
+    filename: str
+    size: int
+    uploaded_at: datetime
+
+    @field_validator("uploaded_at")
+    @classmethod
+    def force_utc(cls, v: datetime) -> datetime:
+        return as_utc(v)
 
 
 class TicketResponse(BaseModel):
@@ -529,6 +578,9 @@ class TicketResponse(BaseModel):
     root_cause: Optional[str] = None
     repair_cost: Optional[float] = None
     closure_notes: Optional[str] = None
+    invoice_number: Optional[str] = None
+    files: List[FileInfo] = []
+    cost_over_quote: Optional[float] = None  # set when the final cost exceeds the approved quotation
     created_at: datetime
     stage_entered_at: datetime
     inspected_at: Optional[datetime] = None
@@ -550,6 +602,8 @@ class TicketResponse(BaseModel):
         self.is_overdue = self.sla_due_at is not None and _now() > self.sla_due_at
         end = as_utc(self.cleared_at) if self.cleared_at else _now()
         self.downtime_hours = round((end - as_utc(self.created_at)).total_seconds() / 3600.0, 2)
+        if self.repair_cost is not None and self.quote_amount is not None and self.repair_cost > self.quote_amount:
+            self.cost_over_quote = round(self.repair_cost - self.quote_amount, 2)
         return self
 
 
@@ -648,7 +702,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> dict:
 def get_bootstrap_data(me: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     """Current user, machines and all tickets (one call keeps every device in sync)."""
     machines = db.query(Machine).all()
-    tickets = db.query(Ticket).order_by(Ticket.created_at.desc()).all()
+    tickets = db.query(Ticket).options(selectinload(Ticket.files)).order_by(Ticket.created_at.desc()).all()
     return {
         "me": user_payload(me),
         "users": [user_payload(u) for u in db.query(User).all()],
@@ -817,12 +871,111 @@ def close_ticket(
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
+    if (
+        REQUIRE_BILL_FOR_OUTSIDE
+        and ticket.status == S.CLEARED
+        and ticket.repair_venue == RepairVenue.OUTSIDE
+        and not db.query(TicketFile).filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == "bill").count()
+    ):
+        raise HTTPException(status_code=422, detail="Attach the vendor bill before closing an outside repair.")
     move_ticket(db, ticket, S.CLOSED, actor, note=f"Root cause: {payload.root_cause.strip()}")
     ticket.root_cause = payload.root_cause.strip()
+    ticket.invoice_number = (payload.invoice_number or "").strip() or None
     ticket.repair_cost = payload.repair_cost
     ticket.closure_notes = (payload.closure_notes or "").strip() or None
     ticket.closed_at = ticket.stage_entered_at
     return finish(db, ticket)
+
+
+# ---- Attachments: vendor quotation (before submitting it) and vendor bill (before closing) -------------
+
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
+MAX_FILES_PER_KIND = 5
+REQUIRE_BILL_FOR_OUTSIDE = os.getenv("REQUIRE_BILL_FOR_OUTSIDE", "1") != "0"
+# Type is decided from the file's own first bytes, never from the client's claim.
+FILE_SIGNATURES = (
+    (b"%PDF", "application/pdf"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+)
+
+
+class FileKind(str, Enum):
+    QUOTATION = "quotation"
+    BILL = "bill"
+
+
+def safe_filename(name: str) -> str:
+    base = (name or "file").replace("\\", "/").rsplit("/", 1)[-1]
+    cleaned = "".join(ch if ch.isalnum() or ch in "._- " else "_" for ch in base).strip() or "file"
+    return cleaned[:150]
+
+
+@app.post("/api/tickets/{ticket_id}/files", status_code=status.HTTP_201_CREATED)
+async def upload_file(
+    ticket_id: str,
+    request: Request,
+    kind: FileKind,
+    filename: str = "file",
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Raw-body upload (no multipart dependency): POST the file bytes with ?kind=...&filename=..."""
+    ticket = get_ticket(db, ticket_id)
+    if kind == FileKind.QUOTATION:
+        if user.role not in MECH:
+            raise HTTPException(status_code=403, detail="Your role cannot do this action.")
+        if ticket.status != S.PENDING_QUOTATION:
+            raise HTTPException(status_code=409, detail="Quotations can only be attached before they are submitted.")
+    else:
+        if user.role not in (UserRole.DEO, UserRole.PM_INCHARGE):
+            raise HTTPException(status_code=403, detail="Your role cannot do this action.")
+        if ticket.status != S.CLEARED or ticket.repair_venue != RepairVenue.OUTSIDE:
+            raise HTTPException(status_code=409, detail="Bills attach to cleared outside repairs only.")
+
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.")
+    data = await request.body()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.")
+    if not data:
+        raise HTTPException(status_code=422, detail="The file is empty.")
+    content_type = next((ct for sig, ct in FILE_SIGNATURES if data.startswith(sig)), None)
+    if not content_type:
+        raise HTTPException(status_code=415, detail="Only PDF, JPG or PNG files are accepted.")
+    existing = db.query(TicketFile).filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == kind.value).count()
+    if existing >= MAX_FILES_PER_KIND:
+        raise HTTPException(status_code=409, detail=f"At most {MAX_FILES_PER_KIND} files per {kind.value}.")
+
+    record = TicketFile(
+        ticket_id=ticket_id,
+        kind=kind.value,
+        filename=safe_filename(filename),
+        content_type=content_type,
+        size=len(data),
+        data=data,
+        uploaded_by=user.user_id,
+    )
+    db.add(record)
+    db.commit()
+    return {"file_id": record.file_id}
+
+
+@app.get("/api/files/{file_id}")
+def download_file(file_id: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Response:
+    record = db.get(TicketFile, file_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="File not found.")
+    return Response(
+        content=record.data,
+        media_type=record.content_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{record.filename}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @app.get("/api/tickets/{ticket_id}/events")
@@ -851,6 +1004,7 @@ def reset_demo(_: User = Depends(require_roles(UserRole.MANAGEMENT)), db: Sessio
     """Wipes all data and re-seeds the demo set. Disable with DEMO_RESET=0."""
     if os.getenv("DEMO_RESET", "1") == "0":
         raise HTTPException(status_code=403, detail="Demo reset is disabled.")
+    db.query(TicketFile).delete()
     db.query(TicketEvent).delete()
     db.query(Ticket).delete()
     db.query(Machine).delete()
@@ -876,7 +1030,7 @@ def stage_average_hours(db: Session) -> dict:
 
 @app.get("/api/dashboard/metrics")
 def get_dashboard_metrics(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
-    tickets = [TicketResponse.model_validate(t) for t in db.query(Ticket).all()]
+    tickets = [TicketResponse.model_validate(t) for t in db.query(Ticket).options(selectinload(Ticket.files)).all()]
     open_stages = [s.value for s in TicketStatus if s != S.CLOSED]
     in_stage = {s: 0 for s in open_stages}
     overdue: dict = {}

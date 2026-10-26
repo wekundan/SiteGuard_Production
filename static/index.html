@@ -155,7 +155,8 @@
       pending_parts_check: { label: "Site store check", tone: "t-sky" },
       pending_dispatch: { label: "Awaiting central store", tone: "t-violet" },
       in_transit: { label: "Spares in transit", tone: "t-indigo" },
-      pending_quotation: { label: "Needs vendor quotation", tone: "t-sky" },
+      quotation_requested: { label: "Quotation pending / requested", tone: "t-amber" },
+      pending_quotation: { label: "Vendor quotation", tone: "t-sky" },
       pending_approval: { label: "Awaiting approval", tone: "t-violet" },
       repair_in_progress: { label: "Repair in progress", tone: "t-blue" },
       cleared: { label: "Cleared, record pending", tone: "t-green" },
@@ -163,7 +164,7 @@
     };
     const STAGE_ORDER = Object.keys(STATUS).filter((s) => s !== "closed");
 
-    const MECH_TASKS = ["pending_inspection", "pending_parts_check", "pending_quotation", "repair_in_progress"];
+    const MECH_TASKS = ["pending_inspection", "pending_parts_check", "quotation_requested", "pending_quotation", "repair_in_progress"];
     const TASKS_BY_ROLE = {
       site_office: [],
       deo: ["cleared"],
@@ -400,6 +401,7 @@
       if (t.repair_venue) row("Repair", t.repair_venue === "in_house" ? "In-house workshop" : "Outside workshop");
       if (t.parts_required) row("Parts", esc(t.parts_required));
       if (t.dispatch_details) row("Dispatch", esc(t.dispatch_details));
+      if (t.quotation_request_note) row("Quotation request", esc(t.quotation_request_note));
       if (t.vendor_name) row("Vendor", `${esc(t.vendor_name)} — <strong>${inr(t.quote_amount)}</strong>${t.quote_details ? ` <span style="color:var(--muted);">(${esc(t.quote_details)})</span>` : ""}`);
       if (t.files && t.files.length) {
         row("Files", t.files.map((f) =>
@@ -429,12 +431,17 @@
             ${btn("dispatch", t, "Confirm dispatch", "primary")}`;
         case "in_transit":
           return btn("receive", t, "Confirm spares received", "success");
+        case "quotation_requested":
+          return `<div class="text-[13px]" style="color:var(--muted);">Request a quotation from the vendor, then upload it when it arrives.</div>
+            ${input(t, "qreqnote", 'placeholder="Remarks: confirm quotation was requested (vendor, date, reference)"', "textarea")}
+            ${btn("quotation_request", t, "Save request remarks", "outline")}
+            ${upload(t, "quotation", "Quotation received: upload PDF or photo, max 5 MB (opens vendor quotation stage)")}`;
         case "pending_quotation":
           return `${input(t, "vendor", 'placeholder="Vendor name"')}
             <input data-draft="${t.ticket_id}:amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Quoted amount (₹)" value="${dv(t, "amount")}" class="field" />
             ${input(t, "qdetails", 'placeholder="Scope, warranty, duration (optional)"')}
             <div>${lbl("Expected completion (optional)")}<input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta")}" class="field" /></div>
-            ${upload(t, "quotation", "Quotation document: PDF or photo, max 5 MB (optional)")}
+            ${upload(t, "quotation", "Add another quotation file (optional), max 5 MB")}
             ${btn("quotation", t, "Submit to management", "primary")}`;
         case "pending_approval":
           return `${input(t, "note", 'placeholder="Note (required if rejecting)"')}
@@ -545,7 +552,7 @@
           const issue = field(id, "issue");
           if (issue.length < 3) return fail("Enter the inspection findings first.");
           return act(put("inspect", { issue_description: issue, repair_venue: action === "inspect_in_house" ? "in_house" : "outside" }),
-            action === "inspect_in_house" ? "Sent to in-house workshop." : "Sent for outside repair quotation.", id);
+            action === "inspect_in_house" ? "Sent to in-house workshop." : "Outside repair — request a vendor quotation.", id);
         }
         case "parts_available":
           return act(put("parts-check", { available: true }), "Spares available. Repair started.", id);
@@ -561,6 +568,11 @@
         }
         case "receive":
           return act(put("receive", null), "Receipt confirmed. Repair started.", id);
+        case "quotation_request": {
+          const note = field(id, "qreqnote");
+          if (note.length < 3) return fail("Enter remarks confirming the quotation was requested.");
+          return act(put("quotation-request", { note }), "Request remarks saved.", id);
+        }
         case "quotation": {
           const vendor = field(id, "vendor"), amount = parseFloat(field(id, "amount"));
           if (vendor.length < 2) return fail("Enter the vendor name.");

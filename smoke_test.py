@@ -80,12 +80,22 @@ with TestClient(main.app) as c:
     # --- SOP 7: outside path with quotation approval -----------------------
     t2 = call("POST", "/api/tickets/create", site, 201, "report second machine", {"machine_id": M_OUT})["ticket_id"]
     call("PUT", f"/api/tickets/{t2}/inspect", pm, 200, "P&M in-charge inspects (outside)", {"issue_description": "Engine overhaul", "repair_venue": "outside"})
+    check(tickets()[t2]["status"] == "quotation_requested", "outside inspect waits for vendor quotation")
+    call(
+        "PUT",
+        f"/api/tickets/{t2}/quotation-request",
+        mech,
+        200,
+        "remarks saved while waiting for quotation",
+        {"note": "Called Shree Works on 10 Oct; quote expected in 2 days"},
+    )
     PDF, PNG = b"%PDF-1.4\n%smoke\n", b"\x89PNG\r\n\x1a\nfakeimage"
     upload(t2, site, "quotation", PDF, 403, "site office cannot attach quotation")
     upload(t2, mech, "quotation", b"just text", 415, "non PDF/JPG/PNG rejected")
     upload(t2, mech, "quotation", b"%PDF" + b"0" * (5 * 1024 * 1024), 413, "file over 5 MB rejected")
     upload(t2, mech, "bill", PDF, 403, "mechanical engineer cannot attach bill")
     qfile = upload(t2, mech, "quotation", PDF, 201, "quotation document attached", name="../evil name?.pdf")
+    check(tickets()[t2]["status"] == "pending_quotation", "quotation upload opens vendor quotation stage")
     quote = {"vendor_name": "Shree Works", "quote_amount": 50000}
     call("PUT", f"/api/tickets/{t2}/quotation", mech, 200, "quotation submitted", quote)
     upload(t2, mech, "quotation", PDF, 409, "cannot attach after submission")

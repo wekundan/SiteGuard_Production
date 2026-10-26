@@ -111,7 +111,8 @@ class TicketStatus(str, Enum):
     PENDING_PARTS_CHECK = "pending_parts_check"  # in-house: mechanical team checks site store
     PENDING_DISPATCH = "pending_dispatch"  # requisition raised, central store to dispatch
     IN_TRANSIT = "in_transit"  # dispatched, site store to confirm receipt
-    PENDING_QUOTATION = "pending_quotation"  # outside: vendor quotation to be submitted
+    QUOTATION_REQUESTED = "quotation_requested"  # outside: waiting for the vendor to send a quotation
+    PENDING_QUOTATION = "pending_quotation"  # outside: quotation received, details to be submitted
     PENDING_APPROVAL = "pending_approval"  # management approves quotation
     REPAIR_IN_PROGRESS = "repair_in_progress"
     CLEARED = "cleared"  # breakdown cleared, closure record pending
@@ -125,7 +126,8 @@ class RepairVenue(str, Enum):
 
 S = TicketStatus
 ALLOWED_TRANSITIONS = {
-    S.PENDING_INSPECTION: {S.PENDING_PARTS_CHECK, S.PENDING_QUOTATION},
+    S.PENDING_INSPECTION: {S.PENDING_PARTS_CHECK, S.QUOTATION_REQUESTED},
+    S.QUOTATION_REQUESTED: {S.PENDING_QUOTATION},  # happens when the quotation document is uploaded
     S.PENDING_PARTS_CHECK: {S.REPAIR_IN_PROGRESS, S.PENDING_DISPATCH},
     S.PENDING_DISPATCH: {S.IN_TRANSIT},
     S.IN_TRANSIT: {S.REPAIR_IN_PROGRESS},
@@ -148,6 +150,7 @@ _SLA_DEFAULTS = {
     S.PENDING_PARTS_CHECK: 4,
     S.PENDING_DISPATCH: 24,
     S.IN_TRANSIT: 48,
+    S.QUOTATION_REQUESTED: 48,
     S.PENDING_QUOTATION: 24,
     S.PENDING_APPROVAL: 24,
     S.REPAIR_IN_PROGRESS: 72,
@@ -284,6 +287,7 @@ class Ticket(Base):
     quote_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     quote_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     approval_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    quotation_request_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # ETA of the current stage (spares arrival or vendor completion)
     eta_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     # closure record
@@ -408,7 +412,7 @@ def seed_initial_data(db: Session) -> None:
         )
 
     PI, PPC, PD = "pending_inspection", "pending_parts_check", "pending_dispatch"
-    PQ, PA, RIP, CL = "pending_quotation", "pending_approval", "repair_in_progress", "cleared"
+    QR, PQ, PA, RIP, CL = "quotation_requested", "pending_quotation", "pending_approval", "repair_in_progress", "cleared"
     add(101, 1, S.PENDING_INSPECTION, [(U_SITE, PI, 3.3)])  # overdue
     add(102, 2, S.PENDING_INSPECTION, [(U_SITE, PI, 0.7)])
     add(
@@ -421,7 +425,7 @@ def seed_initial_data(db: Session) -> None:
     )
     add(
         104, 4, S.PENDING_APPROVAL,
-        [(U_SITE, PI, 10), (U_PM, PQ, 9), (U_PM, PA, 3)],
+        [(U_SITE, PI, 10), (U_PM, QR, 9.5), (U_PM, PQ, 9), (U_PM, PA, 3)],
         issue_description="Stabiliser hydraulic cylinder leaking; seals and rod damaged.",
         repair_venue=RepairVenue.OUTSIDE,
         vendor_name="Shree Hydraulics, Pune",
@@ -472,6 +476,8 @@ def add_missing_columns() -> None:
     with engine.begin() as conn:
         if "invoice_number" not in cols:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN invoice_number VARCHAR(100)"))
+        if "quotation_request_note" not in cols:
+            conn.execute(text("ALTER TABLE tickets ADD COLUMN quotation_request_note TEXT"))
 
 
 @asynccontextmanager
@@ -517,6 +523,10 @@ class PartsCheckRequest(BaseModel):
 class DispatchRequest(BaseModel):
     dispatch_details: str = Field(..., min_length=2, max_length=500)
     eta_date: date
+
+
+class QuotationRequestNote(BaseModel):
+    note: str = Field(..., min_length=3, max_length=1000)
 
 
 class QuotationRequest(BaseModel):
@@ -574,6 +584,7 @@ class TicketResponse(BaseModel):
     quote_amount: Optional[float] = None
     quote_details: Optional[str] = None
     approval_note: Optional[str] = None
+    quotation_request_note: Optional[str] = None
     eta_date: Optional[date] = None
     root_cause: Optional[str] = None
     repair_cost: Optional[float] = None
@@ -753,7 +764,7 @@ def inspect_ticket(
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
-    target = S.PENDING_PARTS_CHECK if payload.repair_venue == RepairVenue.IN_HOUSE else S.PENDING_QUOTATION
+    target = S.PENDING_PARTS_CHECK if payload.repair_venue == RepairVenue.IN_HOUSE else S.QUOTATION_REQUESTED
     description = payload.issue_description.strip()
     move_ticket(db, ticket, target, actor, note=f"{payload.repair_venue.value}: {description}")
     ticket.issue_description = description
@@ -809,7 +820,33 @@ def receive_spares(
     return finish(db, ticket)
 
 
-# SOP 7: vendor quotation for outside repair
+# SOP 7a: outside repair — log that the vendor has been asked for a quotation
+@app.put("/api/tickets/{ticket_id}/quotation-request", response_model=TicketResponse)
+def note_quotation_requested(
+    ticket_id: str,
+    payload: QuotationRequestNote,
+    actor: User = Depends(require_roles(*MECH)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    if ticket.status != S.QUOTATION_REQUESTED:
+        raise HTTPException(status_code=409, detail="This ticket is not waiting for a vendor quotation.")
+    note = payload.note.strip()
+    ticket.quotation_request_note = note
+    db.add(
+        TicketEvent(
+            ticket_id=ticket.ticket_id,
+            actor_id=actor.user_id,
+            from_status=S.QUOTATION_REQUESTED.value,
+            to_status=S.QUOTATION_REQUESTED.value,
+            note=f"Quotation requested: {note}",
+            created_at=_now(),
+        )
+    )
+    return finish(db, ticket)
+
+
+# SOP 7b: vendor quotation details submitted for management approval
 @app.put("/api/tickets/{ticket_id}/quotation", response_model=TicketResponse)
 def submit_quotation(
     ticket_id: str,
@@ -925,8 +962,11 @@ async def upload_file(
     if kind == FileKind.QUOTATION:
         if user.role not in MECH:
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")
-        if ticket.status != S.PENDING_QUOTATION:
-            raise HTTPException(status_code=409, detail="Quotations can only be attached before they are submitted.")
+        if ticket.status not in (S.QUOTATION_REQUESTED, S.PENDING_QUOTATION):
+            raise HTTPException(
+                status_code=409,
+                detail="Attach the quotation while it is pending from the vendor or before submitting it to management.",
+            )
     else:
         if user.role not in (UserRole.DEO, UserRole.PM_INCHARGE):
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")
@@ -958,6 +998,8 @@ async def upload_file(
         uploaded_by=user.user_id,
     )
     db.add(record)
+    if kind == FileKind.QUOTATION and ticket.status == S.QUOTATION_REQUESTED:
+        move_ticket(db, ticket, S.PENDING_QUOTATION, user, note=f"Quotation received: {record.filename}")
     db.commit()
     return {"file_id": record.file_id}
 

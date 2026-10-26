@@ -45,6 +45,12 @@ with TestClient(main.app) as c:
     check(c.post("/api/auth/login", json={"username": "ramesh", "password": "x"}).status_code == 401, "bad password rejected")
     site, deo, mech, pm = login("ramesh"), login("deepak"), login("vikram"), login("meera")
     store, central, mgmt = login("suresh"), login("ananya"), login("rajeshwari")
+    mech_boot = c.get("/api/bootstrap", headers=mech).json()
+    check("pending_vendor_dispatch" in mech_boot["task_statuses"], "mech My tasks includes vendor dispatch stage")
+    check(
+        mech_boot["stage_labels"]["pending_vendor_dispatch"] == "Send machine to vendor",
+        "bootstrap carries stage labels",
+    )
 
     # --- SOP 1: reporting ---------------------------------------------------
     call("POST", "/api/tickets/create", central, 403, "central store cannot report", {"machine_id": M_IN})

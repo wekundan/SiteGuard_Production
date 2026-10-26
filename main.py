@@ -729,6 +729,45 @@ def require_roles(*roles: UserRole) -> Callable[..., User]:
 
 MECH = (UserRole.MECH_ENGINEER, UserRole.PM_INCHARGE)
 
+_MECH_TASK_STATUSES = (
+    S.PENDING_INSPECTION,
+    S.PENDING_PARTS_CHECK,
+    S.QUOTATION_REQUESTED,
+    S.PENDING_QUOTATION,
+    S.PENDING_VENDOR_DISPATCH,
+    S.VENDOR_REPAIR_IN_PROGRESS,
+    S.REPAIR_IN_PROGRESS,
+)
+# Single source of truth for the "My tasks" queue (mirrored in bootstrap for the SPA).
+TASK_STATUSES_BY_ROLE: dict[UserRole, tuple[TicketStatus, ...]] = {
+    UserRole.SITE_OFFICE: (),
+    UserRole.DEO: (S.CLEARED,),
+    UserRole.MECH_ENGINEER: _MECH_TASK_STATUSES,
+    UserRole.PM_INCHARGE: _MECH_TASK_STATUSES + (S.CLEARED,),
+    UserRole.SITE_STORE: (S.IN_TRANSIT,),
+    UserRole.CENTRAL_STORE: (S.PENDING_DISPATCH,),
+    UserRole.MANAGEMENT: (S.PENDING_APPROVAL,),
+}
+
+STAGE_LABELS: dict[str, str] = {
+    "pending_inspection": "Needs inspection",
+    "pending_parts_check": "Site store check",
+    "pending_dispatch": "Awaiting central store",
+    "in_transit": "Spares in transit",
+    "quotation_requested": "Quotation pending / requested",
+    "pending_quotation": "Vendor quotation",
+    "pending_approval": "Awaiting approval",
+    "pending_vendor_dispatch": "Send machine to vendor",
+    "vendor_repair_in_progress": "At vendor workshop",
+    "repair_in_progress": "Repair in progress",
+    "cleared": "Cleared, record pending",
+    "closed": "Closed",
+}
+
+
+def task_statuses_for_role(role: UserRole) -> list[str]:
+    return [s.value for s in TASK_STATUSES_BY_ROLE.get(role, ())]
+
 
 def get_ticket(db: Session, ticket_id: str) -> Ticket:
     ticket = db.get(Ticket, ticket_id)
@@ -795,6 +834,8 @@ def get_bootstrap_data(me: User = Depends(get_current_user), db: Session = Depen
             for m in machines
         ],
         "tickets": [TicketResponse.model_validate(t).model_dump(mode="json") for t in tickets],
+        "task_statuses": task_statuses_for_role(me.role),
+        "stage_labels": STAGE_LABELS,
     }
 
 
@@ -1240,5 +1281,8 @@ if STATIC_DIR.exists():
 def serve_app():
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
-        return FileResponse(str(index_file))
+        return FileResponse(
+            str(index_file),
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+        )
     return HTMLResponse("<h1>SiteGuard API Running — Visit /docs</h1>")

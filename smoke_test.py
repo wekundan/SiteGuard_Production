@@ -51,6 +51,8 @@ with TestClient(main.app) as c:
         mech_boot["stage_labels"]["pending_vendor_dispatch"] == "Send machine to vendor",
         "bootstrap carries stage labels",
     )
+    check(mech_boot.get("app_version") == "3.2.0", "bootstrap exposes app version for deploy checks")
+    check(isinstance(mech_boot.get("my_tasks"), list), "bootstrap returns my_tasks queue")
 
     # --- SOP 1: reporting ---------------------------------------------------
     call("POST", "/api/tickets/create", central, 403, "central store cannot report", {"machine_id": M_IN})

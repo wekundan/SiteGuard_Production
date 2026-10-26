@@ -420,7 +420,14 @@ def seed_initial_data(db: Session) -> None:
         )
 
     PI, PPC, PD = "pending_inspection", "pending_parts_check", "pending_dispatch"
-    QR, PQ, PA, RIP, CL = "quotation_requested", "pending_quotation", "pending_approval", "repair_in_progress", "cleared"
+    QR, PQ, PA, PVD, RIP, CL = (
+        "quotation_requested",
+        "pending_quotation",
+        "pending_approval",
+        "pending_vendor_dispatch",
+        "repair_in_progress",
+        "cleared",
+    )
     add(101, 1, S.PENDING_INSPECTION, [(U_SITE, PI, 3.3)])  # overdue
     add(102, 2, S.PENDING_INSPECTION, [(U_SITE, PI, 0.7)])
     add(
@@ -432,8 +439,8 @@ def seed_initial_data(db: Session) -> None:
         inspected_at=ago(hours=6.5),
     )
     add(
-        104, 4, S.PENDING_APPROVAL,
-        [(U_SITE, PI, 10), (U_PM, QR, 9.5), (U_PM, PQ, 9), (U_PM, PA, 3)],
+        104, 4, S.PENDING_VENDOR_DISPATCH,
+        [(U_SITE, PI, 10), (U_PM, QR, 9.5), (U_PM, PQ, 9), (U_PM, PA, 3), (U_MGMT, PVD, 2)],
         issue_description="Stabiliser hydraulic cylinder leaking; seals and rod damaged.",
         repair_venue=RepairVenue.OUTSIDE,
         vendor_name="Shree Hydraulics, Pune",
@@ -530,6 +537,7 @@ async def lifespan(app: FastAPI):
     sync_postgres_enum_labels("user_role", [r.value for r in UserRole])
     sync_postgres_enum_labels("repair_venue", [v.value for v in RepairVenue])
     add_missing_columns()
+    migrate_legacy_user_roles()
     with SessionLocal() as db:
         seed_initial_data(db)
     yield
@@ -720,7 +728,7 @@ def get_current_user(authorization: Optional[str] = Header(default=None), db: Se
 
 def require_roles(*roles: UserRole) -> Callable[..., User]:
     def checker(user: User = Depends(get_current_user)) -> User:
-        if user.role not in roles:
+        if effective_role(user.role) not in roles:
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")
         return user
 
@@ -765,8 +773,34 @@ STAGE_LABELS: dict[str, str] = {
 }
 
 
+_LEGACY_USER_ROLE: dict[str, UserRole] = {
+    "supervisor": UserRole.MECH_ENGINEER,
+    "head_office": UserRole.CENTRAL_STORE,
+}
+
+
+def effective_role(role: UserRole) -> UserRole:
+    return _LEGACY_USER_ROLE.get(role.value, role)
+
+
 def task_statuses_for_role(role: UserRole) -> list[str]:
-    return [s.value for s in TASK_STATUSES_BY_ROLE.get(role, ())]
+    return [s.value for s in TASK_STATUSES_BY_ROLE.get(effective_role(role), ())]
+
+
+def migrate_legacy_user_roles() -> None:
+    """Databases created from sql/seed.sql still label Vikram as supervisor, etc."""
+    if not inspect(engine).has_table("users"):
+        return
+    pairs = (("supervisor", "mech_engineer"), ("head_office", "central_store"))
+    with engine.begin() as conn:
+        for old, new in pairs:
+            if "postgresql" in DATABASE_URL:
+                conn.execute(
+                    text("UPDATE users SET role = CAST(:new AS user_role) WHERE role::text = :old"),
+                    {"old": old, "new": new},
+                )
+            else:
+                conn.execute(text("UPDATE users SET role = :new WHERE role = :old"), {"old": old, "new": new})
 
 
 def get_ticket(db: Session, ticket_id: str) -> Ticket:
@@ -826,6 +860,8 @@ def get_bootstrap_data(me: User = Depends(get_current_user), db: Session = Depen
     """Current user, machines and all tickets (one call keeps every device in sync)."""
     machines = db.query(Machine).all()
     tickets = db.query(Ticket).options(selectinload(Ticket.files)).order_by(Ticket.created_at.desc()).all()
+    ticket_payloads = [TicketResponse.model_validate(t).model_dump(mode="json") for t in tickets]
+    queue = set(task_statuses_for_role(me.role))
     return {
         "me": user_payload(me),
         "users": [user_payload(u) for u in db.query(User).all()],
@@ -833,9 +869,11 @@ def get_bootstrap_data(me: User = Depends(get_current_user), db: Session = Depen
             {"machine_id": m.machine_id, "name": m.name, "location": m.location, "status": m.status.value}
             for m in machines
         ],
-        "tickets": [TicketResponse.model_validate(t).model_dump(mode="json") for t in tickets],
-        "task_statuses": task_statuses_for_role(me.role),
+        "tickets": ticket_payloads,
+        "task_statuses": sorted(queue),
+        "my_tasks": [t for t in ticket_payloads if t["status"] in queue],
         "stage_labels": STAGE_LABELS,
+        "app_version": "3.2.0",
     }
 
 
@@ -1131,7 +1169,7 @@ async def upload_file(
     """Raw-body upload (no multipart dependency): POST the file bytes with ?kind=...&filename=..."""
     ticket = get_ticket(db, ticket_id)
     if kind == FileKind.QUOTATION:
-        if user.role not in MECH:
+        if effective_role(user.role) not in MECH:
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")
         if ticket.status not in (S.QUOTATION_REQUESTED, S.PENDING_QUOTATION):
             raise HTTPException(
@@ -1139,7 +1177,7 @@ async def upload_file(
                 detail="Attach the quotation while it is pending from the vendor or before submitting it to management.",
             )
     else:
-        if user.role not in (UserRole.DEO, UserRole.PM_INCHARGE):
+        if effective_role(user.role) not in (UserRole.DEO, UserRole.PM_INCHARGE):
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")
         if ticket.status != S.CLEARED or ticket.repair_venue != RepairVenue.OUTSIDE:
             raise HTTPException(status_code=409, detail="Bills attach to cleared outside repairs only.")

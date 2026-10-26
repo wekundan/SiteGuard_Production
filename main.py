@@ -114,7 +114,9 @@ class TicketStatus(str, Enum):
     QUOTATION_REQUESTED = "quotation_requested"  # outside: waiting for the vendor to send a quotation
     PENDING_QUOTATION = "pending_quotation"  # outside: quotation received, details to be submitted
     PENDING_APPROVAL = "pending_approval"  # management approves quotation
-    REPAIR_IN_PROGRESS = "repair_in_progress"
+    PENDING_VENDOR_DISPATCH = "pending_vendor_dispatch"  # outside: mech logs vehicle sent to vendor
+    VENDOR_REPAIR_IN_PROGRESS = "vendor_repair_in_progress"  # outside: repair at vendor workshop
+    REPAIR_IN_PROGRESS = "repair_in_progress"  # in-house repair at site
     CLEARED = "cleared"  # breakdown cleared, closure record pending
     CLOSED = "closed"
 
@@ -132,7 +134,9 @@ ALLOWED_TRANSITIONS = {
     S.PENDING_DISPATCH: {S.IN_TRANSIT},
     S.IN_TRANSIT: {S.REPAIR_IN_PROGRESS},
     S.PENDING_QUOTATION: {S.PENDING_APPROVAL},
-    S.PENDING_APPROVAL: {S.REPAIR_IN_PROGRESS, S.PENDING_QUOTATION},  # approve / reject
+    S.PENDING_APPROVAL: {S.PENDING_VENDOR_DISPATCH, S.PENDING_QUOTATION},  # approve / reject
+    S.PENDING_VENDOR_DISPATCH: {S.VENDOR_REPAIR_IN_PROGRESS},
+    S.VENDOR_REPAIR_IN_PROGRESS: {S.CLEARED},
     S.REPAIR_IN_PROGRESS: {S.CLEARED},
     S.CLEARED: {S.CLOSED},
     S.CLOSED: set(),
@@ -153,12 +157,14 @@ _SLA_DEFAULTS = {
     S.QUOTATION_REQUESTED: 48,
     S.PENDING_QUOTATION: 24,
     S.PENDING_APPROVAL: 24,
+    S.PENDING_VENDOR_DISPATCH: 24,
+    S.VENDOR_REPAIR_IN_PROGRESS: 72,
     S.REPAIR_IN_PROGRESS: 72,
     S.CLEARED: 24,
 }
 SLA_HOURS = {s: float(os.getenv(f"SLA_{s.name}_HOURS", h)) for s, h in _SLA_DEFAULTS.items()}
 # In these stages an ETA date, when given, replaces the hour limit (due at end of that day).
-ETA_BASED_STAGES = {S.IN_TRANSIT, S.REPAIR_IN_PROGRESS}
+ETA_BASED_STAGES = {S.IN_TRANSIT, S.REPAIR_IN_PROGRESS, S.VENDOR_REPAIR_IN_PROGRESS}
 SITE_TZ = timezone(timedelta(minutes=int(os.getenv("SITE_UTC_OFFSET_MINUTES", "330"))))  # IST
 
 
@@ -288,6 +294,8 @@ class Ticket(Base):
     quote_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     approval_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     quotation_request_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    vendor_dispatch_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    vehicle_received_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # ETA of the current stage (spares arrival or vendor completion)
     eta_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     # closure record
@@ -481,6 +489,10 @@ def add_missing_columns() -> None:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN invoice_number VARCHAR(100)"))
         if "quotation_request_note" not in cols:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN quotation_request_note TEXT"))
+        if "vendor_dispatch_note" not in cols:
+            conn.execute(text("ALTER TABLE tickets ADD COLUMN vendor_dispatch_note TEXT"))
+        if "vehicle_received_note" not in cols:
+            conn.execute(text("ALTER TABLE tickets ADD COLUMN vehicle_received_note TEXT"))
 
 
 def sync_postgres_enum_labels(type_name: str, labels: list[str]) -> None:
@@ -580,6 +592,15 @@ class ApprovalRequest(BaseModel):
         return self
 
 
+class VendorDispatchRequest(BaseModel):
+    sent_to_vendor: bool
+    note: str = Field(..., min_length=3, max_length=1000)
+
+
+class VehicleReceiveRequest(BaseModel):
+    note: str = Field(..., min_length=3, max_length=1000)
+
+
 class CloseRequest(BaseModel):
     root_cause: str = Field(..., min_length=3, max_length=1000)
     repair_cost: float = Field(..., ge=0)  # for outside repairs: the final billed amount
@@ -618,6 +639,8 @@ class TicketResponse(BaseModel):
     quote_details: Optional[str] = None
     approval_note: Optional[str] = None
     quotation_request_note: Optional[str] = None
+    vendor_dispatch_note: Optional[str] = None
+    vehicle_received_note: Optional[str] = None
     eta_date: Optional[date] = None
     root_cause: Optional[str] = None
     repair_cost: Optional[float] = None
@@ -926,14 +949,66 @@ def decide_quotation(
     ticket = get_ticket(db, ticket_id)
     note = (payload.note or "").strip() or None
     if payload.approved:
-        move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note=note or "Quotation approved")
+        move_ticket(db, ticket, S.PENDING_VENDOR_DISPATCH, actor, note=note or "Quotation approved")
     else:
         move_ticket(db, ticket, S.PENDING_QUOTATION, actor, note=f"Rejected: {note}")
     ticket.approval_note = note
     return finish(db, ticket)
 
 
-# SOP 6/8: mechanical department confirms the breakdown is cleared; machine is active again
+# Outside repair: mech / PM logs whether the machine was sent to the vendor workshop
+@app.put("/api/tickets/{ticket_id}/vendor-dispatch", response_model=TicketResponse)
+def log_vendor_dispatch(
+    ticket_id: str,
+    payload: VendorDispatchRequest,
+    actor: User = Depends(require_roles(*MECH)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    if ticket.repair_venue != RepairVenue.OUTSIDE:
+        raise HTTPException(status_code=409, detail="Vendor dispatch applies to outside repairs only.")
+    if ticket.status != S.PENDING_VENDOR_DISPATCH:
+        raise HTTPException(status_code=409, detail="This ticket is not awaiting vendor dispatch.")
+    note = payload.note.strip()
+    ticket.vendor_dispatch_note = note
+    if payload.sent_to_vendor:
+        move_ticket(db, ticket, S.VENDOR_REPAIR_IN_PROGRESS, actor, note=f"Sent to vendor: {note}")
+    else:
+        db.add(
+            TicketEvent(
+                ticket_id=ticket.ticket_id,
+                actor_id=actor.user_id,
+                from_status=S.PENDING_VENDOR_DISPATCH.value,
+                to_status=S.PENDING_VENDOR_DISPATCH.value,
+                note=f"Not sent yet: {note}",
+                created_at=_now(),
+            )
+        )
+    return finish(db, ticket)
+
+
+# Outside repair: vehicle returned to site — breakdown cleared, machine active again
+@app.put("/api/tickets/{ticket_id}/vehicle-receive", response_model=TicketResponse)
+def receive_vehicle_from_vendor(
+    ticket_id: str,
+    payload: VehicleReceiveRequest,
+    actor: User = Depends(require_roles(*MECH)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    if ticket.status != S.VENDOR_REPAIR_IN_PROGRESS:
+        raise HTTPException(status_code=409, detail="Confirm receipt only after the machine is at the vendor for repair.")
+    note = payload.note.strip()
+    move_ticket(db, ticket, S.CLEARED, actor, note=f"Received at site: {note}")
+    ticket.vehicle_received_note = note
+    ticket.cleared_at = ticket.stage_entered_at
+    machine = db.get(Machine, ticket.machine_id)
+    if machine:
+        machine.status = MachineStatus.ACTIVE
+    return finish(db, ticket)
+
+
+# In-house repair: mechanical department confirms the breakdown is cleared; machine is active again
 @app.put("/api/tickets/{ticket_id}/clear", response_model=TicketResponse)
 def clear_breakdown(
     ticket_id: str,
@@ -941,6 +1016,11 @@ def clear_breakdown(
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
+    if ticket.status != S.REPAIR_IN_PROGRESS:
+        raise HTTPException(
+            status_code=409,
+            detail="In-house repairs use Mark breakdown cleared; outside repairs use vehicle receipt at site.",
+        )
     move_ticket(db, ticket, S.CLEARED, actor, note="Breakdown cleared")
     ticket.cleared_at = ticket.stage_entered_at
     machine = db.get(Machine, ticket.machine_id)

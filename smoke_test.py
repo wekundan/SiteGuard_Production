@@ -110,7 +110,24 @@ with TestClient(main.app) as c:
     check(tickets()[t2]["status"] == "pending_quotation" and tickets()[t2]["approval_note"] == "Too high", "rejected quote returns to quotation")
     call("PUT", f"/api/tickets/{t2}/quotation", mech, 200, "revised quotation", {"vendor_name": "Shree Works", "quote_amount": 42000})
     call("PUT", f"/api/tickets/{t2}/approval", mgmt, 200, "management approves", {"approved": True})
-    call("PUT", f"/api/tickets/{t2}/clear", pm, 200, "vendor repair cleared")
+    check(tickets()[t2]["status"] == "pending_vendor_dispatch", "approval waits for vendor dispatch")
+    call(
+        "PUT",
+        f"/api/tickets/{t2}/vendor-dispatch",
+        pm,
+        200,
+        "machine sent to vendor",
+        {"sent_to_vendor": True, "note": "Low-bed MH-14 to Shree Works, 12 Oct"},
+    )
+    call("PUT", f"/api/tickets/{t2}/clear", mech, 409, "outside repair uses vehicle receipt not clear")
+    call(
+        "PUT",
+        f"/api/tickets/{t2}/vehicle-receive",
+        pm,
+        200,
+        "vehicle received at site",
+        {"note": "Returned on low-bed 18 Oct, test run OK"},
+    )
     t3 = call("POST", "/api/tickets/create", site, 201, "can re-report after clearance, before closure", {"machine_id": M_OUT})["ticket_id"]
     close2 = {"root_cause": "Piston wear", "repair_cost": 45000, "invoice_number": "INV-77"}
     call("PUT", f"/api/tickets/{t2}/close", pm, 422, "outside repair needs the vendor bill", close2)

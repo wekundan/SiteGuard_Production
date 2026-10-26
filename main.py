@@ -873,7 +873,7 @@ def get_bootstrap_data(me: User = Depends(get_current_user), db: Session = Depen
         "task_statuses": sorted(queue),
         "my_tasks": [t for t in ticket_payloads if t["status"] in queue],
         "stage_labels": STAGE_LABELS,
-        "app_version": "3.2.0",
+        "app_version": "3.2.1",
     }
 
 
@@ -952,6 +952,12 @@ def dispatch_spares(
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
+    if (
+        REQUIRE_DISPATCH_DOCS
+        and ticket.status == S.PENDING_DISPATCH
+        and not db.query(TicketFile).filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == "dispatch").count()
+    ):
+        raise HTTPException(status_code=422, detail="Attach the dispatch documents (PDF) before confirming dispatch.")
     details = payload.dispatch_details.strip()
     move_ticket(db, ticket, S.IN_TRANSIT, actor, note=details)
     ticket.dispatch_details = details
@@ -1138,6 +1144,7 @@ def close_ticket(
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 MAX_FILES_PER_KIND = 5
 REQUIRE_BILL_FOR_OUTSIDE = os.getenv("REQUIRE_BILL_FOR_OUTSIDE", "1") != "0"
+REQUIRE_DISPATCH_DOCS = os.getenv("REQUIRE_DISPATCH_DOCS", "1") != "0"
 # Type is decided from the file's own first bytes, never from the client's claim.
 FILE_SIGNATURES = (
     (b"%PDF", "application/pdf"),
@@ -1148,6 +1155,7 @@ FILE_SIGNATURES = (
 
 class FileKind(str, Enum):
     QUOTATION = "quotation"
+    DISPATCH = "dispatch"
     BILL = "bill"
 
 
@@ -1176,6 +1184,11 @@ async def upload_file(
                 status_code=409,
                 detail="Attach the quotation while it is pending from the vendor or before submitting it to management.",
             )
+    elif kind == FileKind.DISPATCH:
+        if effective_role(user.role) != UserRole.CENTRAL_STORE:
+            raise HTTPException(status_code=403, detail="Your role cannot do this action.")
+        if ticket.status != S.PENDING_DISPATCH:
+            raise HTTPException(status_code=409, detail="Dispatch documents attach while awaiting central store dispatch.")
     else:
         if effective_role(user.role) not in (UserRole.DEO, UserRole.PM_INCHARGE):
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")

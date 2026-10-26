@@ -13,6 +13,7 @@ Every status change is recorded in `ticket_events` (who, when, from, to, note); 
 
 ## Quotation and bill attachments
 - **Quotation:** after outside repair is chosen, mech/PM log request remarks, then upload the vendor PDF/JPG/PNG when it arrives (upload moves the ticket to the vendor-quotation stage). Additional files can be attached before submitting to management (up to 5 per kind). Management sees files on the approval card.
+- **Dispatch (in-house requisition):** central store uploads the dispatch challan/PO PDF (or photo) while the ticket is **Awaiting central store**, then confirms dispatch. Set `REQUIRE_DISPATCH_DOCS=0` to make the upload optional.
 - **Bill:** for outside repairs, the DEO or P&M In-charge must attach the vendor bill (and may enter an invoice number) when closing.
   The final billed amount is compared with the approved quotation; anything above it is flagged. Set `REQUIRE_BILL_FOR_OUTSIDE=0` to make the bill optional.
 - **Storage:** files are stored in the database (a `ticket_files` table), max 5 MB each (`MAX_UPLOAD_BYTES`). The file type is checked from its contents,

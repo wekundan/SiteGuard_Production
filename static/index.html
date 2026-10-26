@@ -442,6 +442,15 @@
     };
     const pair = (a, b) => `<div class="grid grid-cols-2 gap-2.5">${a}${b}</div>`;
 
+    function canRemoveFile(t, f) {
+      if (!state.me || !t || !f) return false;
+      const r = effectiveRole(state.me.role);
+      if (f.kind === "dispatch") return r === "central_store" && t.status === "pending_dispatch";
+      if (f.kind === "quotation") return (r === "mech_engineer" || r === "pm_incharge") && (t.status === "quotation_requested" || t.status === "pending_quotation");
+      if (f.kind === "bill") return (r === "deo" || r === "pm_incharge") && t.status === "cleared" && t.repair_venue === "outside";
+      return false;
+    }
+
     function ticketDetails(t) {
       const rows = [];
       const row = (k, v) => rows.push(`<div class="flex gap-2"><span class="shrink-0" style="color:var(--muted); min-width:5.2rem;">${k}</span><span>${v}</span></div>`);
@@ -454,8 +463,19 @@
       if (t.vehicle_received_note) row("Received at site", esc(t.vehicle_received_note));
       if (t.vendor_name) row("Vendor", `${esc(t.vendor_name)} — <strong>${inr(t.quote_amount)}</strong>${t.quote_details ? ` <span style="color:var(--muted);">(${esc(t.quote_details)})</span>` : ""}`);
       if (t.files && t.files.length) {
-        row("Files", t.files.map((f) =>
-          `<button type="button" data-file="${f.file_id}" class="underline underline-offset-2" style="color:var(--navy);">${esc(f.filename)}</button> <span style="color:var(--muted);">(${f.kind})</span>`).join(", "));
+        row(
+          "Files",
+          t.files
+            .map((f) => {
+              const rm = canRemoveFile(t, f)
+                ? ` <button type="button" data-remove-file="${f.file_id}" class="text-xs font-semibold ml-1" style="color:#be123c;">Remove</button>`
+                : "";
+              return `<span class="inline-flex flex-wrap items-center gap-x-1 mr-2 mb-1">
+                <button type="button" data-file="${f.file_id}" class="underline underline-offset-2" style="color:var(--navy);">${esc(f.filename)}</button>
+                <span style="color:var(--muted);">(${esc(f.kind)})</span>${rm}</span>`;
+            })
+            .join("")
+        );
       }
       if (t.eta_date) row("ETA", t.eta_date);
       if (t.approval_note) rows.push(`<div class="rounded-lg px-3 py-2 mt-1" style="background:#fdeef1; color:#9f1239;"><strong>Management note:</strong> ${esc(t.approval_note)}</div>`);
@@ -705,6 +725,17 @@
       }
     }
 
+    async function removeFile(fileId) {
+      if (!confirm("Remove this attachment?")) return;
+      try {
+        await apiRequest("DELETE", `/api/files/${fileId}`);
+        showToast("Attachment removed.");
+        await refreshFromServer();
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "Could not remove the file.", true);
+      }
+    }
+
     async function openFile(fileId) {
       const win = window.open("", "_blank"); // opened synchronously so the popup blocker allows it
       try {
@@ -721,6 +752,12 @@
 
     window.addEventListener("DOMContentLoaded", () => {
       document.addEventListener("click", (e) => {
+        const rm = e.target.closest("[data-remove-file]");
+        if (rm) {
+          e.preventDefault();
+          removeFile(rm.getAttribute("data-remove-file"));
+          return;
+        }
         const b = e.target.closest("[data-file]");
         if (b) openFile(b.getAttribute("data-file"));
       });

@@ -184,7 +184,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.2")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.3")
 
 
 def hash_password(password: str) -> str:
@@ -1166,6 +1166,28 @@ def safe_filename(name: str) -> str:
     return cleaned[:150]
 
 
+def assert_may_manage_file_kind(user: User, ticket: Ticket, kind: FileKind) -> None:
+    """Same stage/role rules for upload and delete."""
+    if kind == FileKind.QUOTATION:
+        if effective_role(user.role) not in MECH:
+            raise HTTPException(status_code=403, detail="Your role cannot do this action.")
+        if ticket.status not in (S.QUOTATION_REQUESTED, S.PENDING_QUOTATION):
+            raise HTTPException(
+                status_code=409,
+                detail="Quotation files can only be changed while the quotation is being prepared.",
+            )
+    elif kind == FileKind.DISPATCH:
+        if effective_role(user.role) != UserRole.CENTRAL_STORE:
+            raise HTTPException(status_code=403, detail="Your role cannot do this action.")
+        if ticket.status != S.PENDING_DISPATCH:
+            raise HTTPException(status_code=409, detail="Dispatch documents can only be changed before dispatch is confirmed.")
+    else:
+        if effective_role(user.role) not in (UserRole.DEO, UserRole.PM_INCHARGE):
+            raise HTTPException(status_code=403, detail="Your role cannot do this action.")
+        if ticket.status != S.CLEARED or ticket.repair_venue != RepairVenue.OUTSIDE:
+            raise HTTPException(status_code=409, detail="Vendor bills can only be changed before the report is closed.")
+
+
 @app.post("/api/tickets/{ticket_id}/files", status_code=status.HTTP_201_CREATED)
 async def upload_file(
     ticket_id: str,
@@ -1177,24 +1199,7 @@ async def upload_file(
 ) -> dict:
     """Raw-body upload (no multipart dependency): POST the file bytes with ?kind=...&filename=..."""
     ticket = get_ticket(db, ticket_id)
-    if kind == FileKind.QUOTATION:
-        if effective_role(user.role) not in MECH:
-            raise HTTPException(status_code=403, detail="Your role cannot do this action.")
-        if ticket.status not in (S.QUOTATION_REQUESTED, S.PENDING_QUOTATION):
-            raise HTTPException(
-                status_code=409,
-                detail="Attach the quotation while it is pending from the vendor or before submitting it to management.",
-            )
-    elif kind == FileKind.DISPATCH:
-        if effective_role(user.role) != UserRole.CENTRAL_STORE:
-            raise HTTPException(status_code=403, detail="Your role cannot do this action.")
-        if ticket.status != S.PENDING_DISPATCH:
-            raise HTTPException(status_code=409, detail="Dispatch documents attach while awaiting central store dispatch.")
-    else:
-        if effective_role(user.role) not in (UserRole.DEO, UserRole.PM_INCHARGE):
-            raise HTTPException(status_code=403, detail="Your role cannot do this action.")
-        if ticket.status != S.CLEARED or ticket.repair_venue != RepairVenue.OUTSIDE:
-            raise HTTPException(status_code=409, detail="Bills attach to cleared outside repairs only.")
+    assert_may_manage_file_kind(user, ticket, kind)
 
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > MAX_UPLOAD_BYTES:
@@ -1241,6 +1246,22 @@ def download_file(file_id: str, _: User = Depends(get_current_user), db: Session
             "Cache-Control": "private, no-store",
         },
     )
+
+
+@app.delete("/api/files/{file_id}")
+def delete_file(file_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    record = db.get(TicketFile, file_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="File not found.")
+    ticket = get_ticket(db, record.ticket_id)
+    try:
+        kind = FileKind(record.kind)
+    except ValueError:
+        raise HTTPException(status_code=409, detail="Unknown attachment type.")
+    assert_may_manage_file_kind(user, ticket, kind)
+    db.delete(record)
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/tickets/{ticket_id}/events")

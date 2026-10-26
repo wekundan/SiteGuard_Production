@@ -5,6 +5,7 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
     envVars:
       # Pinned deps (psycopg2-binary 2.9.9) have no wheels for newer Pythons.
       - key: PYTHON_VERSION

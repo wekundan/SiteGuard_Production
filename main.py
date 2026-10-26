@@ -464,9 +464,9 @@ def check_schema() -> None:
     insp = inspect(engine)
     if insp.has_table("tickets") and "repair_venue" not in {c["name"] for c in insp.get_columns("tickets")}:
         raise RuntimeError(
-            "Database has an old SiteGuard schema. Use a fresh database, or drop the old tables "
-            "(tickets, ticket_events, machines, users and the user_role/machine_status/ticket_status/"
-            "resolution_type enum types) and restart."
+            "Database has an old SiteGuard schema (missing repair_venue on tickets). "
+            "Render/GitHub deploy will fail until DATABASE_URL points at a fresh Neon database, "
+            "or you run DROP SCHEMA public CASCADE; CREATE SCHEMA public; in the Neon SQL editor."
         )
 
 
@@ -496,15 +496,18 @@ def sync_postgres_enum_labels(type_name: str, labels: list[str]) -> None:
             ),
             {"typ": type_name},
         ).fetchall()
-        if not rows:
-            return
-        existing = {r[0] for r in rows}
-        for label in labels:
-            if label in existing:
-                continue
-            # label is always from our enum definitions (not user input)
-            autocommit = conn.execution_options(isolation_level="AUTOCOMMIT")
-            autocommit.execute(text(f"ALTER TYPE {type_name} ADD VALUE '{label}'"))
+        conn.commit()
+    if not rows:
+        return
+    existing = {r[0] for r in rows}
+    # Must use a separate engine with AUTOCOMMIT; cannot change isolation on a connection mid-transaction.
+    autocommit_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
+    for label in labels:
+        if label in existing:
+            continue
+        with autocommit_engine.connect() as conn:
+            conn.execute(text(f"ALTER TYPE {type_name} ADD VALUE '{label}'"))
+        existing.add(label)
 
 
 @asynccontextmanager

@@ -51,7 +51,10 @@ default 330 = IST) when one is entered. Alerts (WhatsApp/email) are not built ye
 
 **Upgrading from the very first demo version:** that layout is incompatible. Create a fresh Neon database (or run
 `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` in Neon's SQL editor) and update `DATABASE_URL`. The app refuses to start
-on the old layout and says so in the logs.
+on the old layout and says so in the logs (Render then shows a failed GitHub deployment for `siteguard-breakdown-tracker`).
+
+**After pulling workflow changes:** restart or redeploy once so PostgreSQL picks up new `ticket_status` values such as
+`quotation_requested` (done automatically on startup).
 
 Notes:
 - Free Render service sleeps after ~15 min idle (first load ~30s). Optional: ping it every 5 min with UptimeRobot.

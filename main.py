@@ -96,7 +96,7 @@ class UserRole(str, Enum):
     DEO = "deo"  # P&M Data Entry Operator: reports, closes the register entry
     MECH_ENGINEER = "mech_engineer"  # Mechanical Engineer: inspects, repairs
     PM_INCHARGE = "pm_incharge"  # P&M In-charge: inspects, repairs, closes
-    SITE_STORE = "site_store"  # confirms receipt of spares
+    SITE_STORE = "site_store"  # site store stock check (receipt is mech engineer / P&M)
     CENTRAL_STORE = "central_store"  # dispatches spares to site
     MANAGEMENT = "management"  # approves outside-repair quotations, oversight
 
@@ -110,7 +110,7 @@ class TicketStatus(str, Enum):
     PENDING_INSPECTION = "pending_inspection"
     PENDING_PARTS_CHECK = "pending_parts_check"  # in-house: mechanical team checks site store
     PENDING_DISPATCH = "pending_dispatch"  # requisition raised, central store to dispatch
-    IN_TRANSIT = "in_transit"  # dispatched, site store to confirm receipt
+    IN_TRANSIT = "in_transit"  # dispatched; requisition raiser (mech) confirms receipt
     QUOTATION_REQUESTED = "quotation_requested"  # outside: waiting for the vendor to send a quotation
     PENDING_QUOTATION = "pending_quotation"  # outside: quotation received, details to be submitted
     PENDING_APPROVAL = "pending_approval"  # management approves quotation
@@ -184,7 +184,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.3")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.5")
 
 
 def hash_password(password: str) -> str:
@@ -288,6 +288,9 @@ class Ticket(Base):
     repair_venue: Mapped[Optional[RepairVenue]] = mapped_column(_enum(RepairVenue, "repair_venue"), nullable=True)
     # in-house path
     parts_required: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requisition_by: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True, index=True
+    )
     dispatch_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # outside path
     vendor_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -437,6 +440,7 @@ def seed_initial_data(db: Session) -> None:
         issue_description="Main planetary drum gearbox bearing seized.",
         repair_venue=RepairVenue.IN_HOUSE,
         parts_required="OEM planetary gearbox bearing assembly x1 (not in site store)",
+        requisition_by=U_MECH,
         inspected_at=ago(hours=6.5),
     )
     add(
@@ -501,6 +505,41 @@ def add_missing_columns() -> None:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN vendor_dispatch_note TEXT"))
         if "vehicle_received_note" not in cols:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN vehicle_received_note TEXT"))
+        if "requisition_by" not in cols:
+            conn.execute(text("ALTER TABLE tickets ADD COLUMN requisition_by VARCHAR(36)"))
+
+
+def _requisition_raiser_from_events(db: Session, ticket_id: str) -> Optional[str]:
+    """Who moved the ticket to pending_dispatch (parts requisition)."""
+    ev = (
+        db.query(TicketEvent)
+        .filter(TicketEvent.ticket_id == ticket_id, TicketEvent.to_status == S.PENDING_DISPATCH.value)
+        .order_by(TicketEvent.created_at.desc(), TicketEvent.event_id.desc())
+        .first()
+    )
+    return ev.actor_id if ev else None
+
+
+def backfill_requisition_by() -> None:
+    """Tickets requisitioned before requisition_by existed stay routed to site store otherwise."""
+    if not inspect(engine).has_table("tickets") or not inspect(engine).has_table("ticket_events"):
+        return
+    with SessionLocal() as db:
+        open_req = (
+            db.query(Ticket)
+            .filter(
+                Ticket.requisition_by.is_(None),
+                Ticket.status.in_((S.PENDING_DISPATCH, S.IN_TRANSIT)),
+            )
+            .all()
+        )
+        if not open_req:
+            return
+        for ticket in open_req:
+            raiser = _requisition_raiser_from_events(db, ticket.ticket_id)
+            if raiser:
+                ticket.requisition_by = raiser
+        db.commit()
 
 
 def sync_postgres_enum_labels(type_name: str, labels: list[str]) -> None:
@@ -539,6 +578,7 @@ async def lifespan(app: FastAPI):
     sync_postgres_enum_labels("repair_venue", [v.value for v in RepairVenue])
     add_missing_columns()
     migrate_legacy_user_roles()
+    backfill_requisition_by()
     with SessionLocal() as db:
         seed_initial_data(db)
     yield
@@ -642,6 +682,7 @@ class TicketResponse(BaseModel):
     issue_description: Optional[str] = None
     repair_venue: Optional[RepairVenue] = None
     parts_required: Optional[str] = None
+    requisition_by: Optional[str] = None
     dispatch_details: Optional[str] = None
     vendor_name: Optional[str] = None
     quote_amount: Optional[float] = None
@@ -746,6 +787,7 @@ _MECH_TASK_STATUSES = (
     S.PENDING_VENDOR_DISPATCH,
     S.VENDOR_REPAIR_IN_PROGRESS,
     S.REPAIR_IN_PROGRESS,
+    S.IN_TRANSIT,
 )
 # Single source of truth for the "My tasks" queue (mirrored in bootstrap for the SPA).
 TASK_STATUSES_BY_ROLE: dict[UserRole, tuple[TicketStatus, ...]] = {
@@ -753,7 +795,7 @@ TASK_STATUSES_BY_ROLE: dict[UserRole, tuple[TicketStatus, ...]] = {
     UserRole.DEO: (S.CLEARED,),
     UserRole.MECH_ENGINEER: _MECH_TASK_STATUSES,
     UserRole.PM_INCHARGE: _MECH_TASK_STATUSES + (S.CLEARED,),
-    UserRole.SITE_STORE: (S.IN_TRANSIT,),
+    UserRole.SITE_STORE: (),
     UserRole.CENTRAL_STORE: (S.PENDING_DISPATCH,),
     UserRole.MANAGEMENT: (S.PENDING_APPROVAL,),
 }
@@ -786,6 +828,27 @@ def effective_role(role: UserRole) -> UserRole:
 
 def task_statuses_for_role(role: UserRole) -> list[str]:
     return [s.value for s in TASK_STATUSES_BY_ROLE.get(effective_role(role), ())]
+
+
+def may_act_on_in_transit(me: User, ticket: Ticket) -> bool:
+    """In-transit receipt goes to whoever raised the requisition; P&M In-charge can cover any."""
+    if ticket.status != S.IN_TRANSIT:
+        return False
+    if not ticket.requisition_by:
+        return effective_role(me.role) in MECH
+    if effective_role(me.role) == UserRole.PM_INCHARGE:
+        return True
+    if effective_role(me.role) == UserRole.MECH_ENGINEER:
+        return ticket.requisition_by == me.user_id
+    return False
+
+
+def ticket_in_my_queue(me: User, ticket: Ticket) -> bool:
+    if ticket.status.value not in task_statuses_for_role(me.role):
+        return False
+    if ticket.status == S.IN_TRANSIT:
+        return may_act_on_in_transit(me, ticket)
+    return True
 
 
 def migrate_legacy_user_roles() -> None:
@@ -872,7 +935,11 @@ def get_bootstrap_data(me: User = Depends(get_current_user), db: Session = Depen
         ],
         "tickets": ticket_payloads,
         "task_statuses": sorted(queue),
-        "my_tasks": [t for t in ticket_payloads if t["status"] in queue],
+        "my_tasks": [
+            TicketResponse.model_validate(t).model_dump(mode="json")
+            for t in tickets
+            if ticket_in_my_queue(me, t)
+        ],
         "stage_labels": STAGE_LABELS,
         "app_version": APP_UI_VERSION,
     }
@@ -941,6 +1008,7 @@ def parts_check(
         parts = payload.parts_required.strip()
         move_ticket(db, ticket, S.PENDING_DISPATCH, actor, note=f"Requisition: {parts}")
         ticket.parts_required = parts
+        ticket.requisition_by = actor.user_id
     return finish(db, ticket)
 
 
@@ -959,6 +1027,10 @@ def dispatch_spares(
         and not db.query(TicketFile).filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == "dispatch").count()
     ):
         raise HTTPException(status_code=422, detail="Attach the dispatch documents (PDF) before confirming dispatch.")
+    if not ticket.requisition_by:
+        raiser = _requisition_raiser_from_events(db, ticket.ticket_id)
+        if raiser:
+            ticket.requisition_by = raiser
     details = payload.dispatch_details.strip()
     move_ticket(db, ticket, S.IN_TRANSIT, actor, note=details)
     ticket.dispatch_details = details
@@ -966,15 +1038,22 @@ def dispatch_spares(
     return finish(db, ticket)
 
 
-# SOP 6: site store confirms receipt of spares
+# SOP 6: engineer who raised the requisition confirms spares received at site
 @app.put("/api/tickets/{ticket_id}/receive", response_model=TicketResponse)
 def receive_spares(
     ticket_id: str,
-    actor: User = Depends(require_roles(UserRole.SITE_STORE)),
+    actor: User = Depends(require_roles(*MECH)),
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
-    move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note="Spares received at site store")
+    if ticket.status != S.IN_TRANSIT:
+        raise HTTPException(status_code=409, detail="This ticket is not awaiting spare receipt.")
+    if ticket.requisition_by and effective_role(actor.role) == UserRole.MECH_ENGINEER and ticket.requisition_by != actor.user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the engineer who raised the requisition can confirm receipt.",
+        )
+    move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note="Spares received at site")
     ticket.eta_date = None
     return finish(db, ticket)
 

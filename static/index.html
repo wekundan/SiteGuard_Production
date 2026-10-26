@@ -169,7 +169,7 @@
 
     const MECH_TASKS = [
       "pending_inspection", "pending_parts_check", "quotation_requested", "pending_quotation",
-      "pending_vendor_dispatch", "vendor_repair_in_progress", "repair_in_progress"
+      "pending_vendor_dispatch", "vendor_repair_in_progress", "repair_in_progress", "in_transit"
     ];
     // Legacy Neon/sql seeds used supervisor / head_office — map to current SOP roles.
     const ROLE_ALIASES = { supervisor: "mech_engineer", head_office: "central_store" };
@@ -179,7 +179,7 @@
       mech_engineer: MECH_TASKS,
       supervisor: MECH_TASKS,
       pm_incharge: [...MECH_TASKS, "cleared"],
-      site_store: ["in_transit"],
+      site_store: [],
       central_store: ["pending_dispatch"],
       head_office: ["pending_dispatch"],
       management: ["pending_approval"]
@@ -378,9 +378,15 @@
     // Rendering
     // ========================================================================
     function tasksFor(role) {
-      const list = state.myTasks
+      const r = effectiveRole(role);
+      let list = state.myTasks
         ? state.myTasks
         : state.tickets.filter((t) => taskStatusesForRole(role).includes(t.status));
+      if (!state.myTasks && state.me && r === "mech_engineer") {
+        list = list.filter(
+          (t) => t.status !== "in_transit" || !t.requisition_by || t.requisition_by === state.me.user_id
+        );
+      }
       return list.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     }
 
@@ -503,7 +509,8 @@
             <div>${lbl("Expected arrival")}<input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta") || daysFromNowDate(2)}" class="field" /></div>
             ${btn("dispatch", t, "Confirm dispatch", "primary")}`;
         case "in_transit":
-          return btn("receive", t, "Confirm spares received", "success");
+          return `<div class="text-[13px]" style="color:var(--muted);">Central store has dispatched the parts. Confirm when they arrive at site.</div>
+            ${btn("receive", t, "Confirm spares received", "success")}`;
         case "quotation_requested":
           return `<div class="text-[13px]" style="color:var(--muted);">Request a quotation from the vendor, then upload it when it arrives.</div>
             ${input(t, "qreqnote", 'placeholder="Remarks: confirm quotation was requested (vendor, date, reference)"', "textarea")}

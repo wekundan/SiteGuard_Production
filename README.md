@@ -4,7 +4,7 @@ FastAPI + Postgres + single-page mobile web app that follows the plant breakdown
 
 ## Workflow
 1. **Report** (Sr Civil Engineer or P&M DEO) -> 2. **Inspect and decide** (Mechanical Engineer or P&M In-charge): in-house or outside workshop.
-- **In-house:** site store check. Parts available -> repair. Not available -> requisition -> **central store dispatches** -> **site store confirms receipt** -> repair.
+- **In-house:** site store check. Parts available -> repair. Not available -> requisition (assigned to that engineer) -> **central store dispatches** -> **same engineer confirms receipt** (P&M In-charge can confirm any) -> repair.
 - **Outside:** quotation pending / requested (remarks) -> upload vendor quotation -> enter quote details -> **management approves** (or sends back) -> **mech/PM logs dispatch to vendor** -> repair at vendor -> **mech/PM confirms vehicle received at site** (breakdown cleared) -> DEO/PM closes register with bill and cost.
 3. Mechanical dept marks the **breakdown cleared** (machine active again) -> 4. **DEO or P&M In-charge closes** the register entry with root cause and total repair cost. Downtime is calculated automatically.
 
@@ -29,7 +29,7 @@ All demo users share the password in the `DEMO_PASSWORD` env var (local default 
 | `deepak` | P&M DEO | Report; close register entry |
 | `vikram` | Mechanical Engineer | Inspect, parts check, quotation, mark cleared |
 | `meera` | P&M In-charge | Same as mechanical engineer, plus close register entry |
-| `suresh` | Site Store | Confirm receipt of spares |
+| `suresh` | Site Store | (Demo role; receipt is confirmed by the requisition raiser) |
 | `ananya` | Central Store | Dispatch spares |
 | `rajeshwari` | Management | Approve quotations, dashboard, reset demo |
 

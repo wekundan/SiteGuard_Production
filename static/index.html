@@ -158,38 +158,69 @@
       quotation_requested: { label: "Quotation pending / requested", tone: "t-amber" },
       pending_quotation: { label: "Vendor quotation", tone: "t-sky" },
       pending_approval: { label: "Awaiting approval", tone: "t-violet" },
+      pending_vendor_dispatch: { label: "Send machine to vendor", tone: "t-amber" },
+      vendor_repair_in_progress: { label: "At vendor workshop", tone: "t-blue" },
       repair_in_progress: { label: "Repair in progress", tone: "t-blue" },
       cleared: { label: "Cleared, record pending", tone: "t-green" },
       closed: { label: "Closed", tone: "t-gray" }
     };
     const STAGE_ORDER = Object.keys(STATUS).filter((s) => s !== "closed");
 
-    const MECH_TASKS = ["pending_inspection", "pending_parts_check", "quotation_requested", "pending_quotation", "repair_in_progress"];
+    const MECH_TASKS = [
+      "pending_inspection", "pending_parts_check", "quotation_requested", "pending_quotation",
+      "pending_vendor_dispatch", "vendor_repair_in_progress", "repair_in_progress"
+    ];
+    // Legacy Neon/sql seeds used supervisor / head_office — map to current SOP roles.
+    const ROLE_ALIASES = { supervisor: "mech_engineer", head_office: "central_store" };
     const TASKS_BY_ROLE = {
       site_office: [],
       deo: ["cleared"],
       mech_engineer: MECH_TASKS,
+      supervisor: MECH_TASKS,
       pm_incharge: [...MECH_TASKS, "cleared"],
       site_store: ["in_transit"],
       central_store: ["pending_dispatch"],
+      head_office: ["pending_dispatch"],
       management: ["pending_approval"]
     };
     const VIEW_LABEL = { report: "Report", tasks: "My tasks", board: "Board", dashboard: "Dashboard" };
 
     function viewsFor(role) {
+      const r = effectiveRole(role);
       const v = [];
-      if (role === "site_office" || role === "deo") v.push("report");
-      if (TASKS_BY_ROLE[role].length) v.push("tasks");
+      if (r === "site_office" || r === "deo") v.push("report");
+      if (taskStatusesForRole(r).length) v.push("tasks");
       v.push("board");
-      if (role === "management" || role === "pm_incharge") v.push("dashboard");
+      if (r === "management" || r === "pm_incharge") v.push("dashboard");
       return v;
     }
 
     let state = {
       me: null, machines: [], tickets: [], metrics: null,
       activeView: "report", drafts: {}, openHistory: {}, history: {},
-      selectedMachineId: "", lastServerSignature: "", lastRenderAt: 0
+      selectedMachineId: "", lastServerSignature: "", lastRenderAt: 0,
+      taskStatuses: null,
+      myTasks: null,
+      appVersion: ""
     };
+
+    function effectiveRole(role) {
+      return ROLE_ALIASES[role] || role;
+    }
+
+    function taskStatusesForRole(role) {
+      const r = effectiveRole(role);
+      if (Array.isArray(state.taskStatuses) && state.taskStatuses.length) return state.taskStatuses;
+      return TASKS_BY_ROLE[r] || [];
+    }
+
+    function applyStageLabels(labels) {
+      if (!labels) return;
+      for (const [key, label] of Object.entries(labels)) {
+        const cur = STATUS[key] || { tone: "t-gray" };
+        STATUS[key] = { ...cur, label };
+      }
+    }
 
     // ========================================================================
     // Helpers
@@ -244,11 +275,12 @@
     class ApiError extends Error {
       constructor(message, status) { super(message); this.status = status; }
     }
-    function errorText(data) {
+    function errorText(data, status) {
       const d = data && data.detail;
       if (typeof d === "string") return d;
       if (Array.isArray(d)) return d.map((x) => x.msg.replace(/^Value error, /, "")).join("; ");
-      return "Request failed.";
+      if (status >= 500) return "Server error — restart the app or reset the demo database.";
+      return status ? `Request failed (${status}).` : "Request failed.";
     }
     async function apiRequest(method, path, body = null) {
       const headers = { "Content-Type": "application/json" };
@@ -265,7 +297,7 @@
         showLogin();
         throw new ApiError("Please log in again.", 401);
       }
-      if (!res.ok) throw new ApiError(errorText(data), res.status);
+      if (!res.ok) throw new ApiError(errorText(data, res.status), res.status);
       return data;
     }
 
@@ -274,6 +306,11 @@
       state.me = data.me;
       state.machines = data.machines;
       state.tickets = data.tickets;
+      state.taskStatuses = data.task_statuses || null;
+      state.myTasks = Array.isArray(data.my_tasks) ? data.my_tasks : null;
+      state.appVersion = data.app_version || "";
+      applyStageLabels(data.stage_labels);
+      if (data.me && ROLE_ALIASES[data.me.role]) data.me.role = effectiveRole(data.me.role);
       state.metrics = viewsFor(data.me.role).includes("dashboard") ? await apiRequest("GET", "/api/dashboard/metrics") : null;
       return data;
     }
@@ -331,7 +368,7 @@
       state.activeView = views.includes("tasks") ? "tasks" : views[0];
       $("login-view").classList.add("hidden");
       ["main-wrapper", "main-nav", "user-bar"].forEach((id) => $(id).classList.remove("hidden"));
-      $("user-label").textContent = state.me.name;
+      $("user-label").textContent = state.me.name + (state.appVersion ? ` · v${state.appVersion}` : "");
       $("btn-reset-demo").classList.toggle("hidden", state.me.role !== "management");
       renderAll();
     }
@@ -340,10 +377,10 @@
     // Rendering
     // ========================================================================
     function tasksFor(role) {
-      const mine = TASKS_BY_ROLE[role];
-      return state.tickets
-        .filter((t) => mine.includes(t.status))
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      const list = state.myTasks
+        ? state.myTasks
+        : state.tickets.filter((t) => taskStatusesForRole(role).includes(t.status));
+      return list.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     }
 
     function renderAll() {
@@ -402,6 +439,8 @@
       if (t.parts_required) row("Parts", esc(t.parts_required));
       if (t.dispatch_details) row("Dispatch", esc(t.dispatch_details));
       if (t.quotation_request_note) row("Quotation request", esc(t.quotation_request_note));
+      if (t.vendor_dispatch_note) row("Vendor dispatch", esc(t.vendor_dispatch_note));
+      if (t.vehicle_received_note) row("Received at site", esc(t.vehicle_received_note));
       if (t.vendor_name) row("Vendor", `${esc(t.vendor_name)} — <strong>${inr(t.quote_amount)}</strong>${t.quote_details ? ` <span style="color:var(--muted);">(${esc(t.quote_details)})</span>` : ""}`);
       if (t.files && t.files.length) {
         row("Files", t.files.map((f) =>
@@ -446,6 +485,14 @@
         case "pending_approval":
           return `${input(t, "note", 'placeholder="Note (required if rejecting)"')}
             ${pair(btn("approve", t, "Approve", "success"), btn("reject", t, "Reject", "danger"))}`;
+        case "pending_vendor_dispatch":
+          return `<div class="text-[13px]" style="color:var(--muted);">Log whether the broken machine has been sent to the approved vendor.</div>
+            ${input(t, "vdispatch", 'placeholder="Remarks: transporter, date, condition on dispatch"', "textarea")}
+            ${pair(btn("vendor_sent", t, "Sent to vendor", "primary"), btn("vendor_not_sent", t, "Not sent yet", "outline"))}`;
+        case "vendor_repair_in_progress":
+          return `<div class="text-[13px]" style="color:var(--muted);">After vendor repair, confirm the machine is back on site.</div>
+            ${input(t, "vreceive", 'placeholder="Receipt remarks: date, condition, driver"', "textarea")}
+            ${btn("vehicle_receive", t, "Vehicle received — close breakdown", "success")}`;
         case "repair_in_progress":
           return btn("clear", t, "Mark breakdown cleared", "success");
         case "cleared": {
@@ -587,6 +634,22 @@
           if (!note) return fail("Give a reason for rejecting.");
           return act(put("approval", { approved: false, note }), "Quotation sent back.", id);
         }
+        case "vendor_sent":
+        case "vendor_not_sent": {
+          const note = field(id, "vdispatch");
+          if (note.length < 3) return fail("Enter dispatch remarks.");
+          const sent = action === "vendor_sent";
+          return act(
+            put("vendor-dispatch", { sent_to_vendor: sent, note }),
+            sent ? "Machine sent to vendor. Repair at workshop." : "Dispatch note saved.",
+            id
+          );
+        }
+        case "vehicle_receive": {
+          const note = field(id, "vreceive");
+          if (note.length < 3) return fail("Enter receipt remarks.");
+          return act(put("vehicle-receive", { note }), "Vehicle received. Breakdown closed; machine is active.", id);
+        }
         case "clear":
           return act(put("clear", null), "Breakdown cleared. Machine is active again.", id);
         case "close": {
@@ -617,7 +680,7 @@
         });
         const data = await res.json().catch(() => null);
         if (res.status === 401) { showLogin(); return; }
-        if (!res.ok) throw new ApiError(errorText(data), res.status);
+        if (!res.ok) throw new ApiError(errorText(data, res.status), res.status);
         showToast("File attached.");
         await refreshFromServer();
       } catch (e) {

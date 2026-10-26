@@ -184,7 +184,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.5")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.6")
 
 
 def hash_password(password: str) -> str:
@@ -315,7 +315,7 @@ class Ticket(Base):
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     machine: Mapped["Machine"] = relationship("Machine")
-    reporter: Mapped["User"] = relationship("User")
+    reporter: Mapped["User"] = relationship("User", foreign_keys=[reported_by])
     files: Mapped[List["TicketFile"]] = relationship("TicketFile", order_by="TicketFile.uploaded_at")
 
 

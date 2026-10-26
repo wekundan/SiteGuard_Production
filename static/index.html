@@ -93,6 +93,7 @@
         <span class="inline-flex w-12 h-12 rounded-xl items-center justify-center serif text-2xl font-semibold" style="background: var(--navy); color: var(--gold);">S</span>
         <h1 class="serif text-3xl mt-3" style="color: var(--navy);">SiteGuard</h1>
         <p class="text-sm mt-1" style="color: var(--muted);">Machinery breakdown tracking</p>
+        <p class="text-xs mt-2" style="color: var(--muted);">UI build {{SITEGUARD_BUILD}}</p>
       </div>
       <form id="form-login" class="card p-6 space-y-3">
         <input id="login-username" type="text" autocomplete="username" autocapitalize="none" placeholder="Username" required class="field" />
@@ -428,7 +429,17 @@
       `<button type="button" data-action="${action}" data-ticket="${t.ticket_id}" class="btn btn-${variant}">${label}</button>`;
     const lbl = (text) => `<div class="label mb-1.5">${text}</div>`;
     const upload = (t, kind, label) =>
-      `<div>${lbl(label)}<input type="file" data-upload="${t.ticket_id}:${kind}" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" class="field" style="padding:.5rem;" /></div>`;
+      `<div class="rounded-xl p-3" style="background:#f4f8fc; border:1px dashed #9cb4cc;">
+        <div class="label mb-2">${label}</div>
+        <input type="file" data-upload="${t.ticket_id}:${kind}" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+          class="field" style="padding:.65rem; font-weight:600; background:#fff;" />
+      </div>`;
+    const dispatchAttachStatus = (t) => {
+      const n = (t.files || []).filter((f) => f.kind === "dispatch").length;
+      return n
+        ? `<div class="text-sm font-medium" style="color:#0b6b52;">${n} dispatch file(s) attached — you can confirm dispatch below.</div>`
+        : `<div class="text-sm font-semibold" style="color:#be123c;">Step 1: choose a dispatch PDF/photo in the box below.</div>`;
+    };
     const pair = (a, b) => `<div class="grid grid-cols-2 gap-2.5">${a}${b}</div>`;
 
     function ticketDetails(t) {
@@ -465,7 +476,10 @@
             ${input(t, "parts", 'placeholder="If not in stock: list the parts to requisition"', "textarea")}
             ${pair(btn("parts_available", t, "Parts available", "success"), btn("parts_missing", t, "Raise requisition", "outline"))}`;
         case "pending_dispatch":
-          return `${input(t, "dispatch", 'placeholder="Dispatch details: vehicle, docket, quantity"')}
+          return `${dispatchAttachStatus(t)}
+            ${upload(t, "dispatch", "Dispatch challan / PO (PDF or photo, max 5 MB)")}
+            <div class="text-[13px] font-semibold mt-1" style="color:var(--navy);">Step 2: dispatch details</div>
+            ${input(t, "dispatchnote", 'placeholder="Vehicle, docket number, quantity"')}
             <div>${lbl("Expected arrival")}<input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta") || daysFromNowDate(2)}" class="field" /></div>
             ${btn("dispatch", t, "Confirm dispatch", "primary")}`;
         case "in_transit":
@@ -609,7 +623,9 @@
           return act(put("parts-check", { available: false, parts_required: parts }), "Requisition sent to central store.", id);
         }
         case "dispatch": {
-          const details = field(id, "dispatch"), eta = field(id, "eta");
+          const t = state.tickets.find((x) => x.ticket_id === id);
+          const details = field(id, "dispatchnote"), eta = field(id, "eta");
+          if (t && !(t.files || []).some((f) => f.kind === "dispatch")) return fail("Attach the dispatch PDF first (Step 1).");
           if (details.length < 2 || !eta) return fail("Enter dispatch details and the arrival date.");
           return act(put("dispatch", { dispatch_details: details, eta_date: eta }), "Dispatch recorded.", id);
         }
@@ -708,7 +724,7 @@
         const b = e.target.closest("[data-file]");
         if (b) openFile(b.getAttribute("data-file"));
       });
-      $("view-tasks").addEventListener("change", (e) => {
+      document.addEventListener("change", (e) => {
         if (e.target.matches("[data-upload]")) uploadFile(e.target);
       });
       $("btn-close-toast").addEventListener("click", () => $("toast-container").classList.add("hidden"));

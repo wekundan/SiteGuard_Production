@@ -184,6 +184,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.2")
 
 
 def hash_password(password: str) -> str:
@@ -873,7 +874,7 @@ def get_bootstrap_data(me: User = Depends(get_current_user), db: Session = Depen
         "task_statuses": sorted(queue),
         "my_tasks": [t for t in ticket_payloads if t["status"] in queue],
         "stage_labels": STAGE_LABELS,
-        "app_version": "3.2.1",
+        "app_version": APP_UI_VERSION,
     }
 
 
@@ -1332,8 +1333,13 @@ if STATIC_DIR.exists():
 def serve_app():
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
-        return FileResponse(
-            str(index_file),
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+        html = index_file.read_text(encoding="utf-8").replace("{{SITEGUARD_BUILD}}", APP_UI_VERSION)
+        return HTMLResponse(
+            html,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "X-SiteGuard-Build": APP_UI_VERSION,
+            },
         )
     return HTMLResponse("<h1>SiteGuard API Running — Visit /docs</h1>")

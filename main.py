@@ -27,7 +27,7 @@ from typing import Callable, Generator, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import (
@@ -46,7 +46,7 @@ from sqlalchemy import (
     inspect,
     text,
 )
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError, OperationalError, StatementError
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -472,7 +472,10 @@ def check_schema() -> None:
 
 def add_missing_columns() -> None:
     """Tiny forward migration for databases created before a column existed (create_all skips those)."""
-    cols = {c["name"] for c in inspect(engine).get_columns("tickets")}
+    insp = inspect(engine)
+    if not insp.has_table("tickets"):
+        return
+    cols = {c["name"] for c in insp.get_columns("tickets")}
     with engine.begin() as conn:
         if "invoice_number" not in cols:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN invoice_number VARCHAR(100)"))
@@ -480,10 +483,37 @@ def add_missing_columns() -> None:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN quotation_request_note TEXT"))
 
 
+def sync_postgres_enum_labels(type_name: str, labels: list[str]) -> None:
+    """create_all does not add new values to an existing PostgreSQL ENUM type."""
+    if "postgresql" not in DATABASE_URL:
+        return
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT e.enumlabel FROM pg_enum e "
+                "JOIN pg_type t ON e.enumtypid = t.oid "
+                "WHERE t.typname = :typ"
+            ),
+            {"typ": type_name},
+        ).fetchall()
+        if not rows:
+            return
+        existing = {r[0] for r in rows}
+        for label in labels:
+            if label in existing:
+                continue
+            # label is always from our enum definitions (not user input)
+            autocommit = conn.execution_options(isolation_level="AUTOCOMMIT")
+            autocommit.execute(text(f"ALTER TYPE {type_name} ADD VALUE '{label}'"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     check_schema()
     Base.metadata.create_all(bind=engine)
+    sync_postgres_enum_labels("ticket_status", [s.value for s in TicketStatus])
+    sync_postgres_enum_labels("user_role", [r.value for r in UserRole])
+    sync_postgres_enum_labels("repair_venue", [v.value for v in RepairVenue])
     add_missing_columns()
     with SessionLocal() as db:
         seed_initial_data(db)
@@ -623,6 +653,23 @@ class TicketResponse(BaseModel):
 # ============================================================================
 
 app = FastAPI(title="SiteGuard Machinery Breakdown Tracker", version="3.0.0", lifespan=lifespan)
+
+
+@app.exception_handler(StatementError)
+@app.exception_handler(DataError)
+@app.exception_handler(OperationalError)
+def database_error_handler(_request: Request, exc: Exception) -> JSONResponse:
+    """Return JSON (not plain text) so the mobile UI can show a useful message."""
+    msg = str(exc.orig) if getattr(exc, "orig", None) else str(exc)
+    if "quotation_requested" in msg and "enum" in msg.lower():
+        detail = (
+            "Database enum is missing the quotation_requested status. "
+            "Restart the app so startup migrations can run, or use a fresh database."
+        )
+    else:
+        detail = "A database error occurred. Restart the app or reset the demo database."
+    return JSONResponse(status_code=500, content={"detail": detail})
+
 
 # The UI is served from the same origin, so CORS is off unless origins are listed explicitly.
 _cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]

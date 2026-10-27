@@ -202,7 +202,8 @@
       selectedMachineId: "", lastServerSignature: "", lastRenderAt: 0,
       taskStatuses: null,
       myTasks: null,
-      appVersion: ""
+      appVersion: "",
+      pendingUploads: {}
     };
 
     function effectiveRole(role) {
@@ -434,11 +435,14 @@
     const btn = (action, t, label, variant) =>
       `<button type="button" data-action="${action}" data-ticket="${t.ticket_id}" class="btn btn-${variant}">${label}</button>`;
     const lbl = (text) => `<div class="label mb-1.5">${text}</div>`;
-    const upload = (t, kind, label) =>
+    const upload = (t, kind, label, defer = false) =>
       `<div class="rounded-xl p-3" style="background:#f4f8fc; border:1px dashed #9cb4cc;">
         <div class="label mb-2">${label}</div>
-        <input type="file" data-upload="${t.ticket_id}:${kind}" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+        <input type="file" data-${defer ? "deferred-upload" : "upload"}="${t.ticket_id}:${kind}" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
           class="field" style="padding:.65rem; font-weight:600; background:#fff;" />
+        ${defer && state.pendingUploads[`${t.ticket_id}:${kind}`]
+          ? `<div class="text-sm mt-2 font-medium" style="color:#0b6b52;">Selected: ${esc(state.pendingUploads[`${t.ticket_id}:${kind}`].name)} — submits with the button below.</div>`
+          : ""}
       </div>`;
     const dispatchAttachStatus = (t) => {
       const n = (t.files || []).filter((f) => f.kind === "dispatch").length;
@@ -512,10 +516,10 @@
           return `<div class="text-[13px]" style="color:var(--muted);">Central store has dispatched the parts. Confirm when they arrive at site.</div>
             ${btn("receive", t, "Confirm spares received", "success")}`;
         case "quotation_requested":
-          return `<div class="text-[13px]" style="color:var(--muted);">Request a quotation from the vendor, then upload it when it arrives.</div>
-            ${input(t, "qreqnote", 'placeholder="Remarks: confirm quotation was requested (vendor, date, reference)"', "textarea")}
-            ${btn("quotation_request", t, "Save request remarks", "outline")}
-            ${upload(t, "quotation", "Quotation received: upload PDF or photo, max 5 MB (opens vendor quotation stage)")}`;
+          return `<div class="text-[13px]" style="color:var(--muted);">Log that you requested a vendor quotation, attach the document when it arrives, then submit once.</div>
+            ${input(t, "qreqnote", 'placeholder="Remarks: vendor, date, reference"', "textarea")}
+            ${upload(t, "quotation", "Quotation document (PDF or photo, max 5 MB)", true)}
+            ${btn("quotation_request_submit", t, "Submit remarks and quotation", "primary")}`;
         case "pending_quotation":
           return `${input(t, "vendor", 'placeholder="Vendor name"')}
             <input data-draft="${t.ticket_id}:amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Quoted amount (₹)" value="${dv(t, "amount")}" class="field" />
@@ -658,10 +662,23 @@
         }
         case "receive":
           return act(put("receive", null), "Receipt confirmed. Repair started.", id);
-        case "quotation_request": {
+        case "quotation_request_submit": {
           const note = field(id, "qreqnote");
           if (note.length < 3) return fail("Enter remarks confirming the quotation was requested.");
-          return act(put("quotation-request", { note }), "Request remarks saved.", id);
+          const pending = state.pendingUploads[`${id}:quotation`];
+          const t = state.tickets.find((x) => x.ticket_id === id);
+          const hasFile = pending || (t && (t.files || []).some((f) => f.kind === "quotation"));
+          if (!hasFile) return fail("Choose the quotation file before submitting.");
+          return act(async () => {
+            if (pending) {
+              await postFile(id, "quotation", pending);
+              delete state.pendingUploads[`${id}:quotation`];
+            }
+            await apiRequest("PUT", `/api/tickets/${id}/quotation-request`, {
+              note,
+              quotation_received: true
+            });
+          }, "Submitted. Enter vendor quotation details next.", id);
         }
         case "quotation": {
           const vendor = field(id, "vendor"), amount = parseFloat(field(id, "amount"));
@@ -709,21 +726,37 @@
     // ---- attachments: raw-body upload and authenticated viewing ---------------
     const MAX_UPLOAD_MB = 5;
 
+    async function postFile(ticketId, kind, file) {
+      if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+        throw new ApiError(`File is larger than ${MAX_UPLOAD_MB} MB.`, 413);
+      }
+      const res = await fetch(
+        `/api/tickets/${ticketId}/files?kind=${kind}&filename=${encodeURIComponent(file.name)}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY),
+            "Content-Type": "application/octet-stream"
+          },
+          body: file
+        }
+      );
+      const data = await res.json().catch(() => null);
+      if (res.status === 401) {
+        showLogin();
+        throw new ApiError("Please log in again.", 401);
+      }
+      if (!res.ok) throw new ApiError(errorText(data, res.status), res.status);
+      return data;
+    }
+
     async function uploadFile(inputEl) {
       const [id, kind] = inputEl.getAttribute("data-upload").split(":");
       const file = inputEl.files[0];
       if (!file) return;
-      if (file.size > MAX_UPLOAD_MB * 1024 * 1024) { inputEl.value = ""; return fail(`File is larger than ${MAX_UPLOAD_MB} MB.`); }
       showToast("Uploading…");
       try {
-        const res = await fetch(`/api/tickets/${id}/files?kind=${kind}&filename=${encodeURIComponent(file.name)}`, {
-          method: "POST",
-          headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY), "Content-Type": "application/octet-stream" },
-          body: file
-        });
-        const data = await res.json().catch(() => null);
-        if (res.status === 401) { showLogin(); return; }
-        if (!res.ok) throw new ApiError(errorText(data, res.status), res.status);
+        await postFile(id, kind, file);
         showToast("File attached.");
         await refreshFromServer();
       } catch (e) {
@@ -769,6 +802,18 @@
         if (b) openFile(b.getAttribute("data-file"));
       });
       document.addEventListener("change", (e) => {
+        if (e.target.matches("[data-deferred-upload]")) {
+          const [id, kind] = e.target.getAttribute("data-deferred-upload").split(":");
+          const file = e.target.files[0];
+          if (!file) return;
+          if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+            e.target.value = "";
+            return fail(`File is larger than ${MAX_UPLOAD_MB} MB.`);
+          }
+          state.pendingUploads[`${id}:${kind}`] = file;
+          renderAll();
+          return;
+        }
         if (e.target.matches("[data-upload]")) uploadFile(e.target);
       });
       $("btn-close-toast").addEventListener("click", () => $("toast-container").classList.add("hidden"));

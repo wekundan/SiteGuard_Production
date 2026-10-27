@@ -129,7 +129,7 @@ class RepairVenue(str, Enum):
 S = TicketStatus
 ALLOWED_TRANSITIONS = {
     S.PENDING_INSPECTION: {S.PENDING_PARTS_CHECK, S.QUOTATION_REQUESTED},
-    S.QUOTATION_REQUESTED: {S.PENDING_QUOTATION},  # happens when the quotation document is uploaded
+    S.QUOTATION_REQUESTED: {S.PENDING_QUOTATION},  # engineer confirms request remarks + quotation file
     S.PENDING_PARTS_CHECK: {S.REPAIR_IN_PROGRESS, S.PENDING_DISPATCH},
     S.PENDING_DISPATCH: {S.IN_TRANSIT},
     S.IN_TRANSIT: {S.REPAIR_IN_PROGRESS},
@@ -184,7 +184,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.6")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.7")
 
 
 def hash_password(password: str) -> str:
@@ -621,6 +621,7 @@ class DispatchRequest(BaseModel):
 
 class QuotationRequestNote(BaseModel):
     note: str = Field(..., min_length=3, max_length=1000)
+    quotation_received: bool = False  # True: remarks + attached quotation file → vendor quotation stage
 
 
 class QuotationRequest(BaseModel):
@@ -1071,16 +1072,27 @@ def note_quotation_requested(
         raise HTTPException(status_code=409, detail="This ticket is not waiting for a vendor quotation.")
     note = payload.note.strip()
     ticket.quotation_request_note = note
-    db.add(
-        TicketEvent(
-            ticket_id=ticket.ticket_id,
-            actor_id=actor.user_id,
-            from_status=S.QUOTATION_REQUESTED.value,
-            to_status=S.QUOTATION_REQUESTED.value,
-            note=f"Quotation requested: {note}",
-            created_at=_now(),
+    if payload.quotation_received:
+        has_file = (
+            db.query(TicketFile).filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == "quotation").count()
         )
-    )
+        if not has_file:
+            raise HTTPException(
+                status_code=422,
+                detail="Attach the vendor quotation (PDF or photo) before submitting.",
+            )
+        move_ticket(db, ticket, S.PENDING_QUOTATION, actor, note=f"Quotation received: {note}")
+    else:
+        db.add(
+            TicketEvent(
+                ticket_id=ticket.ticket_id,
+                actor_id=actor.user_id,
+                from_status=S.QUOTATION_REQUESTED.value,
+                to_status=S.QUOTATION_REQUESTED.value,
+                note=f"Quotation requested: {note}",
+                created_at=_now(),
+            )
+        )
     return finish(db, ticket)
 
 
@@ -1305,8 +1317,6 @@ async def upload_file(
         uploaded_by=user.user_id,
     )
     db.add(record)
-    if kind == FileKind.QUOTATION and ticket.status == S.QUOTATION_REQUESTED:
-        move_ticket(db, ticket, S.PENDING_QUOTATION, user, note=f"Quotation received: {record.filename}")
     db.commit()
     return {"file_id": record.file_id}
 

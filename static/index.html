@@ -80,10 +80,12 @@
         <span class="w-8 h-8 rounded-lg flex items-center justify-center serif text-lg font-semibold" style="background: var(--gold); color: #1a1205;">S</span>
         <span class="serif text-white text-lg font-semibold">SiteGuard</span>
       </div>
-      <div id="user-bar" class="hidden flex items-center gap-2 min-w-0 w-full sm:w-auto justify-start">
-        <span id="user-label" class="text-xs font-medium truncate min-w-0 max-w-[9.5rem] sm:max-w-[14rem]" style="color:#b8c5d3;"></span>
-        <button id="btn-reset-demo" type="button" class="hidden btn btn-ghost whitespace-nowrap shrink-0">Reset demo</button>
-        <button id="btn-logout" type="button" class="btn btn-ghost whitespace-nowrap shrink-0">Log out</button>
+      <div id="user-bar" class="hidden flex items-center min-w-0 w-full sm:w-auto sm:max-w-[min(100%,20rem)] gap-2">
+        <span id="user-label" class="text-xs font-medium truncate min-w-0 flex-1 sm:flex-initial sm:max-w-[10rem]" style="color:#b8c5d3;"></span>
+        <div class="flex items-center gap-1 shrink-0 ml-auto">
+          <button id="btn-reset-demo" type="button" class="hidden btn btn-ghost whitespace-nowrap">Reset demo</button>
+          <button id="btn-logout" type="button" class="btn btn-ghost whitespace-nowrap">Log out</button>
+        </div>
       </div>
     </div>
     <nav id="main-nav" class="hidden" style="background: var(--navy); border-top: 1px solid rgba(255,255,255,.08);">

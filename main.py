@@ -184,7 +184,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.7")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.9")
 
 
 def hash_password(password: str) -> str:
@@ -620,15 +620,22 @@ class DispatchRequest(BaseModel):
 
 
 class QuotationRequestNote(BaseModel):
-    note: str = Field(..., min_length=3, max_length=1000)
-    quotation_received: bool = False  # True: remarks + attached quotation file → vendor quotation stage
+    note: Optional[str] = Field(default=None, max_length=1000)
+    quotation_received: bool = False  # True: vendor quotation file attached → pending_quotation stage
+
+    @model_validator(mode="after")
+    def validate_note(self) -> "QuotationRequestNote":
+        if self.quotation_received:
+            return self
+        text = (self.note or "").strip()
+        if len(text) < 3:
+            raise ValueError("Enter at least 3 characters of remarks.")
+        self.note = text
+        return self
 
 
 class QuotationRequest(BaseModel):
-    vendor_name: str = Field(..., min_length=2, max_length=255)
-    quote_amount: float = Field(..., gt=0)
-    quote_details: Optional[str] = Field(default=None, max_length=1000)
-    eta_date: Optional[date] = None
+    quote_details: str = Field(..., min_length=3, max_length=1000)  # remarks; amounts live on the attachment
 
 
 class ApprovalRequest(BaseModel):
@@ -1070,19 +1077,27 @@ def note_quotation_requested(
     ticket = get_ticket(db, ticket_id)
     if ticket.status != S.QUOTATION_REQUESTED:
         raise HTTPException(status_code=409, detail="This ticket is not waiting for a vendor quotation.")
-    note = payload.note.strip()
-    ticket.quotation_request_note = note
     if payload.quotation_received:
+        if not ticket.quotation_request_note:
+            raise HTTPException(status_code=422, detail="Log the quotation request before marking the quotation received.")
         has_file = (
             db.query(TicketFile).filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == "quotation").count()
         )
         if not has_file:
             raise HTTPException(
                 status_code=422,
-                detail="Attach the vendor quotation (PDF or photo) before submitting.",
+                detail="Attach the vendor quotation (PDF or photo) before continuing.",
             )
-        move_ticket(db, ticket, S.PENDING_QUOTATION, actor, note=f"Quotation received: {note}")
+        move_ticket(
+            db,
+            ticket,
+            S.PENDING_QUOTATION,
+            actor,
+            note=f"Quotation received: {ticket.quotation_request_note}",
+        )
     else:
+        note = (payload.note or "").strip()
+        ticket.quotation_request_note = note
         db.add(
             TicketEvent(
                 ticket_id=ticket.ticket_id,
@@ -1105,12 +1120,16 @@ def submit_quotation(
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
-    vendor = payload.vendor_name.strip()
-    move_ticket(db, ticket, S.PENDING_APPROVAL, actor, note=f"{vendor}: {payload.quote_amount:,.2f}")
-    ticket.vendor_name = vendor
-    ticket.quote_amount = payload.quote_amount
-    ticket.quote_details = (payload.quote_details or "").strip() or None
-    ticket.eta_date = payload.eta_date
+    if ticket.status != S.PENDING_QUOTATION:
+        raise HTTPException(status_code=409, detail="This ticket is not in the vendor quotation stage.")
+    has_file = (
+        db.query(TicketFile).filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == "quotation").count()
+    )
+    if not has_file:
+        raise HTTPException(status_code=422, detail="Attach at least one vendor quotation file before submitting.")
+    remarks = payload.quote_details.strip()
+    move_ticket(db, ticket, S.PENDING_APPROVAL, actor, note=remarks)
+    ticket.quote_details = remarks
     ticket.approval_note = None
     return finish(db, ticket)
 
@@ -1247,6 +1266,7 @@ FILE_SIGNATURES = (
 
 class FileKind(str, Enum):
     QUOTATION = "quotation"
+    QUOTATION_REQUEST = "quotation_request"  # optional proof when the vendor was asked (not the quote itself)
     DISPATCH = "dispatch"
     BILL = "bill"
 
@@ -1262,21 +1282,33 @@ def assert_may_manage_file_kind(user: User, ticket: Ticket, kind: FileKind) -> N
     if kind == FileKind.QUOTATION:
         if effective_role(user.role) not in MECH:
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")
+        if ticket.status == S.QUOTATION_REQUESTED and not ticket.quotation_request_note:
+            raise HTTPException(status_code=409, detail="Log the quotation request before attaching the vendor quotation.")
         if ticket.status not in (S.QUOTATION_REQUESTED, S.PENDING_QUOTATION):
             raise HTTPException(
                 status_code=409,
                 detail="Quotation files can only be changed while the quotation is being prepared.",
+            )
+    elif kind == FileKind.QUOTATION_REQUEST:
+        if effective_role(user.role) not in MECH:
+            raise HTTPException(status_code=403, detail="Your role cannot do this action.")
+        if ticket.status != S.QUOTATION_REQUESTED:
+            raise HTTPException(
+                status_code=409,
+                detail="Request-support files can only be added while logging the quotation request.",
             )
     elif kind == FileKind.DISPATCH:
         if effective_role(user.role) != UserRole.CENTRAL_STORE:
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")
         if ticket.status != S.PENDING_DISPATCH:
             raise HTTPException(status_code=409, detail="Dispatch documents can only be changed before dispatch is confirmed.")
-    else:
+    elif kind == FileKind.BILL:
         if effective_role(user.role) not in (UserRole.DEO, UserRole.PM_INCHARGE):
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")
         if ticket.status != S.CLEARED or ticket.repair_venue != RepairVenue.OUTSIDE:
             raise HTTPException(status_code=409, detail="Vendor bills can only be changed before the report is closed.")
+    else:
+        raise HTTPException(status_code=422, detail="Unknown attachment type.")
 
 
 @app.post("/api/tickets/{ticket_id}/files", status_code=status.HTTP_201_CREATED)

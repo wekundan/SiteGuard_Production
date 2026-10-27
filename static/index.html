@@ -203,7 +203,8 @@
       taskStatuses: null,
       myTasks: null,
       appVersion: "",
-      pendingUploads: {}
+      pendingUploads: {},
+      pendingUploadLists: {}
     };
 
     function effectiveRole(role) {
@@ -450,13 +451,34 @@
         ? `<div class="text-sm font-medium" style="color:#0b6b52;">${n} dispatch file(s) attached — you can confirm dispatch below.</div>`
         : `<div class="text-sm font-semibold" style="color:#be123c;">Step 1: choose a dispatch PDF/photo in the box below.</div>`;
     };
+    const quotationFilesOnTicket = (t) => (t.files || []).filter((f) => f.kind === "quotation");
+
+    function pendingUploadListHtml(t, kind) {
+      const key = `${t.ticket_id}:${kind}`;
+      const list = state.pendingUploadLists[key] || [];
+      if (!list.length) return "";
+      return `<div class="space-y-1 mt-2">${list
+        .map(
+          (f, i) => `<div class="text-sm flex items-center justify-between gap-2" style="color:#0b6b52;">
+            <span class="truncate">Selected: ${esc(f.name)}</span>
+            <button type="button" data-pending-key="${key}" data-pending-index="${i}" class="text-xs font-semibold shrink-0" style="color:#be123c;">Remove</button>
+          </div>`
+        )
+        .join("")}</div>`;
+    }
+
+    const deferredQuotationUpload = (t, label) =>
+      `${upload(t, "quotation", label, true)}${pendingUploadListHtml(t, "quotation")}`;
     const pair = (a, b) => `<div class="grid grid-cols-2 gap-2.5">${a}${b}</div>`;
 
     function canRemoveFile(t, f) {
       if (!state.me || !t || !f) return false;
       const r = effectiveRole(state.me.role);
       if (f.kind === "dispatch") return r === "central_store" && t.status === "pending_dispatch";
-      if (f.kind === "quotation") return (r === "mech_engineer" || r === "pm_incharge") && (t.status === "quotation_requested" || t.status === "pending_quotation");
+      if (f.kind === "quotation")
+        return (r === "mech_engineer" || r === "pm_incharge") && (t.status === "quotation_requested" || t.status === "pending_quotation");
+      if (f.kind === "quotation_request")
+        return (r === "mech_engineer" || r === "pm_incharge") && t.status === "quotation_requested" && !t.quotation_request_note;
       if (f.kind === "bill") return (r === "deo" || r === "pm_incharge") && t.status === "cleared" && t.repair_venue === "outside";
       return false;
     }
@@ -472,6 +494,7 @@
       if (t.vendor_dispatch_note) row("Vendor dispatch", esc(t.vendor_dispatch_note));
       if (t.vehicle_received_note) row("Received at site", esc(t.vehicle_received_note));
       if (t.vendor_name) row("Vendor", `${esc(t.vendor_name)} — <strong>${inr(t.quote_amount)}</strong>${t.quote_details ? ` <span style="color:var(--muted);">(${esc(t.quote_details)})</span>` : ""}`);
+      const fileKindLabel = { quotation: "vendor quotation", quotation_request: "request support", dispatch: "dispatch", bill: "bill" };
       if (t.files && t.files.length) {
         row(
           "Files",
@@ -482,7 +505,7 @@
                 : "";
               return `<span class="inline-flex flex-wrap items-center gap-x-1 mr-2 mb-1">
                 <button type="button" data-file="${f.file_id}" class="underline underline-offset-2" style="color:var(--navy);">${esc(f.filename)}</button>
-                <span style="color:var(--muted);">(${esc(f.kind)})</span>${rm}</span>`;
+                <span style="color:var(--muted);">(${esc(fileKindLabel[f.kind] || f.kind)})</span>${rm}</span>`;
             })
             .join("")
         );
@@ -516,16 +539,19 @@
           return `<div class="text-[13px]" style="color:var(--muted);">Central store has dispatched the parts. Confirm when they arrive at site.</div>
             ${btn("receive", t, "Confirm spares received", "success")}`;
         case "quotation_requested":
-          return `<div class="text-[13px]" style="color:var(--muted);">Log that you requested a vendor quotation, attach the document when it arrives, then submit once.</div>
-            ${input(t, "qreqnote", 'placeholder="Remarks: vendor, date, reference"', "textarea")}
-            ${upload(t, "quotation", "Quotation document (PDF or photo, max 5 MB)", true)}
-            ${btn("quotation_request_submit", t, "Submit remarks and quotation", "primary")}`;
+          if (!t.quotation_request_note) {
+            return `<div class="text-[13px]" style="color:var(--muted);">Log that you asked the vendor for a quotation. Attachment is optional (e.g. email screenshot).</div>
+              ${input(t, "qreqnote", 'placeholder="Remarks: vendor, date, reference"', "textarea")}
+              ${upload(t, "quotation_request", "Optional supporting file (PDF or photo, max 5 MB)", true)}
+              ${btn("quotation_request_log", t, "Submit request log", "primary")}`;
+          }
+          return `<div class="text-[13px]" style="color:var(--muted);">Request logged. When the vendor quotation arrives, attach it and continue.</div>
+            ${deferredQuotationUpload(t, "Vendor quotation (PDF or photo, max 5 MB)")}
+            ${btn("quotation_received_submit", t, "Quotation received — continue", "primary")}`;
         case "pending_quotation":
-          return `${input(t, "vendor", 'placeholder="Vendor name"')}
-            <input data-draft="${t.ticket_id}:amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Quoted amount (₹)" value="${dv(t, "amount")}" class="field" />
-            ${input(t, "qdetails", 'placeholder="Scope, warranty, duration (optional)"')}
-            <div>${lbl("Expected completion (optional)")}<input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta")}" class="field" /></div>
-            ${upload(t, "quotation", "Add another quotation file (optional), max 5 MB")}
+          return `<div class="text-[13px]" style="color:var(--muted);">Add remarks and the vendor quotation file(s), then submit to management.</div>
+            ${input(t, "qdetails", 'placeholder="Remarks (vendor, scope, amount if known)"', "textarea")}
+            ${deferredQuotationUpload(t, "Vendor quotation files (PDF or photo, max 5 MB each)")}
             ${btn("quotation", t, "Submit to management", "primary")}`;
         case "pending_approval":
           return `${input(t, "note", 'placeholder="Note (required if rejecting)"')}
@@ -543,7 +569,7 @@
         case "cleared": {
           const outside = t.repair_venue === "outside";
           return `<div class="text-[13px]" style="color:var(--muted);">Downtime: <strong style="color:var(--ink);">${formatDuration(t.downtime_hours)}</strong>. Log the closure record.${
-            outside ? ` Approved quotation: <strong style="color:var(--ink);">${inr(t.quote_amount)}</strong>.` : ""}</div>
+            outside && t.quote_amount != null ? ` Approved quotation: <strong style="color:var(--ink);">${inr(t.quote_amount)}</strong>.` : ""}</div>
             ${input(t, "root", 'placeholder="Root cause"', "textarea")}
             ${outside ? upload(t, "bill", "Vendor bill: PDF or photo, max 5 MB (required)") + input(t, "invoice", 'placeholder="Invoice number (optional)"') : ""}
             <input data-draft="${t.ticket_id}:cost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="${outside ? "Final billed amount (₹)" : "Total repair cost (₹)"}" value="${dv(t, "cost")}" class="field" />
@@ -662,30 +688,47 @@
         }
         case "receive":
           return act(put("receive", null), "Receipt confirmed. Repair started.", id);
-        case "quotation_request_submit": {
+        case "quotation_request_log": {
           const note = field(id, "qreqnote");
           if (note.length < 3) return fail("Enter remarks confirming the quotation was requested.");
-          const pending = state.pendingUploads[`${id}:quotation`];
-          const t = state.tickets.find((x) => x.ticket_id === id);
-          const hasFile = pending || (t && (t.files || []).some((f) => f.kind === "quotation"));
-          if (!hasFile) return fail("Choose the quotation file before submitting.");
+          const pending = state.pendingUploads[`${id}:quotation_request`];
           return act(async () => {
             if (pending) {
-              await postFile(id, "quotation", pending);
+              await postFile(id, "quotation_request", pending);
+              delete state.pendingUploads[`${id}:quotation_request`];
+            }
+            await apiRequest("PUT", `/api/tickets/${id}/quotation-request`, { note });
+          }, "Request log saved.", id);
+        }
+        case "quotation_received_submit": {
+          const t = state.tickets.find((x) => x.ticket_id === id);
+          const pendingList = state.pendingUploadLists[`${id}:quotation`] || [];
+          const pendingOne = state.pendingUploads[`${id}:quotation`];
+          const hasQuotation =
+            pendingList.length || pendingOne || (t && quotationFilesOnTicket(t).length);
+          if (!hasQuotation) return fail("Attach the vendor quotation before continuing.");
+          return act(async () => {
+            if (pendingOne) {
+              await postFile(id, "quotation", pendingOne);
               delete state.pendingUploads[`${id}:quotation`];
             }
-            await apiRequest("PUT", `/api/tickets/${id}/quotation-request`, {
-              note,
-              quotation_received: true
-            });
-          }, "Submitted. Enter vendor quotation details next.", id);
+            for (const f of pendingList) await postFile(id, "quotation", f);
+            delete state.pendingUploadLists[`${id}:quotation`];
+            await apiRequest("PUT", `/api/tickets/${id}/quotation-request`, { quotation_received: true });
+          }, "Quotation received. Add remarks and submit to management.", id);
         }
         case "quotation": {
-          const vendor = field(id, "vendor"), amount = parseFloat(field(id, "amount"));
-          if (vendor.length < 2) return fail("Enter the vendor name.");
-          if (!(amount > 0)) return fail("Enter the quoted amount.");
-          return act(put("quotation", { vendor_name: vendor, quote_amount: amount, quote_details: field(id, "qdetails") || null, eta_date: field(id, "eta") || null }),
-            "Quotation sent to management.", id);
+          const remarks = field(id, "qdetails");
+          if (remarks.length < 3) return fail("Enter remarks for management.");
+          const pending = state.pendingUploadLists[`${id}:quotation`] || [];
+          const t = state.tickets.find((x) => x.ticket_id === id);
+          const hasQuotation = pending.length || (t && quotationFilesOnTicket(t).length);
+          if (!hasQuotation) return fail("Attach at least one vendor quotation file.");
+          return act(async () => {
+            for (const f of pending) await postFile(id, "quotation", f);
+            delete state.pendingUploadLists[`${id}:quotation`];
+            await apiRequest("PUT", `/api/tickets/${id}/quotation`, { quote_details: remarks });
+          }, "Quotation sent to management.", id);
         }
         case "approve":
           return act(put("approval", { approved: true, note: field(id, "note") || null }), "Quotation approved.", id);
@@ -792,6 +835,18 @@
 
     window.addEventListener("DOMContentLoaded", () => {
       document.addEventListener("click", (e) => {
+        const pr = e.target.closest("[data-pending-key]");
+        if (pr && pr.hasAttribute("data-pending-index")) {
+          e.preventDefault();
+          const pKey = pr.getAttribute("data-pending-key");
+          const i = parseInt(pr.getAttribute("data-pending-index"), 10);
+          const list = (state.pendingUploadLists[pKey] || []).slice();
+          list.splice(i, 1);
+          if (list.length) state.pendingUploadLists[pKey] = list;
+          else delete state.pendingUploadLists[pKey];
+          renderAll();
+          return;
+        }
         const rm = e.target.closest("[data-remove-file]");
         if (rm) {
           e.preventDefault();
@@ -810,7 +865,20 @@
             e.target.value = "";
             return fail(`File is larger than ${MAX_UPLOAD_MB} MB.`);
           }
-          state.pendingUploads[`${id}:${kind}`] = file;
+          const key = `${id}:${kind}`;
+          if (kind === "quotation") {
+            const t = state.tickets.find((x) => x.ticket_id === id);
+            const onServer = t ? quotationFilesOnTicket(t).length : 0;
+            const list = state.pendingUploadLists[key] || [];
+            if (onServer + list.length >= 5) {
+              e.target.value = "";
+              return fail("At most 5 quotation files per ticket.");
+            }
+            state.pendingUploadLists[key] = [...list, file];
+          } else {
+            state.pendingUploads[key] = file;
+          }
+          e.target.value = "";
           renderAll();
           return;
         }

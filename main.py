@@ -184,7 +184,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.3.2")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.3.3")
 
 
 def hash_password(password: str) -> str:

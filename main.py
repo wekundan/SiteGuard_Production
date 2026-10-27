@@ -184,7 +184,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.3.0")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.3.2")
 
 
 def hash_password(password: str) -> str:
@@ -643,19 +643,9 @@ class DispatchRequest(BaseModel):
     eta_date: date
 
 
-class QuotationRequestNote(BaseModel):
-    note: Optional[str] = Field(default=None, max_length=1000)
-    quotation_received: bool = False  # True: vendor quotation file attached → pending_quotation stage
-
-    @model_validator(mode="after")
-    def validate_note(self) -> "QuotationRequestNote":
-        if self.quotation_received:
-            return self
-        text = (self.note or "").strip()
-        if len(text) < 3:
-            raise ValueError("Enter at least 3 characters of remarks.")
-        self.note = text
-        return self
+class QuotationRequestMessage(BaseModel):
+    note: str = Field(default="", max_length=1000)
+    attachment_name: Optional[str] = Field(default=None, max_length=150)
 
 
 class QuotationRequest(BaseModel):
@@ -1090,39 +1080,56 @@ def receive_spares(
     return finish(db, ticket)
 
 
-# SOP 7a: outside repair — log that the vendor has been asked for a quotation
-@app.put("/api/tickets/{ticket_id}/quotation-request", response_model=TicketResponse)
-def note_quotation_requested(
+# SOP 7a: outside repair — remark thread before vendor quotation is attached
+@app.put("/api/tickets/{ticket_id}/quotation-request/message", response_model=TicketResponse)
+def send_quotation_request_message(
     ticket_id: str,
-    payload: QuotationRequestNote,
+    payload: QuotationRequestMessage,
     actor: User = Depends(require_roles(*MECH)),
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
     if ticket.status != S.QUOTATION_REQUESTED:
         raise HTTPException(status_code=409, detail="This ticket is not waiting for a vendor quotation.")
-    if payload.quotation_received:
-        if not ticket.quotation_request_note:
-            raise HTTPException(status_code=422, detail="Log the quotation request before marking the quotation received.")
-        has_file = (
-            db.query(TicketFile).filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == "quotation").count()
+    note = payload.note.strip()
+    attach = (payload.attachment_name or "").strip()
+    if not note and not attach:
+        raise HTTPException(status_code=422, detail="Enter a remark or attach a file.")
+    line = f"{note} 📎 {attach}".strip() if attach and note else (note or f"📎 {attach}")
+    ticket.quotation_request_note = (
+        f"{ticket.quotation_request_note}\n{line}" if ticket.quotation_request_note else line
+    )
+    db.add(
+        TicketEvent(
+            ticket_id=ticket.ticket_id,
+            actor_id=actor.user_id,
+            from_status=S.QUOTATION_REQUESTED.value,
+            to_status=S.QUOTATION_REQUESTED.value,
+            note=line,
+            created_at=_now(),
         )
-        if not has_file:
-            raise HTTPException(
-                status_code=422,
-                detail="Attach the vendor quotation (PDF or photo) before continuing.",
-            )
-        move_ticket(
-            db,
-            ticket,
-            S.PENDING_QUOTATION,
-            actor,
-            note=f"Quotation received: {ticket.quotation_request_note}",
-        )
-    else:
-        note = (payload.note or "").strip()
-        ticket.quotation_request_note = note
-        move_ticket(db, ticket, S.PENDING_QUOTATION, actor, note=f"Quotation requested: {note}")
+    )
+    return finish(db, ticket)
+
+
+@app.put("/api/tickets/{ticket_id}/quotation-request/continue", response_model=TicketResponse)
+def continue_quotation_request(
+    ticket_id: str,
+    actor: User = Depends(require_roles(*MECH)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    if ticket.status != S.QUOTATION_REQUESTED:
+        raise HTTPException(status_code=409, detail="This ticket is not waiting for a vendor quotation.")
+    has_remark = bool((ticket.quotation_request_note or "").strip())
+    has_file = (
+        db.query(TicketFile)
+        .filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == "quotation_request")
+        .count()
+    )
+    if not has_remark and not has_file:
+        raise HTTPException(status_code=422, detail="Send at least one remark or file first.")
+    move_ticket(db, ticket, S.PENDING_QUOTATION, actor, note="Quotation request logged")
     return finish(db, ticket)
 
 

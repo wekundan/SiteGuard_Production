@@ -184,7 +184,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.2.9")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.3.0")
 
 
 def hash_password(password: str) -> str:
@@ -520,6 +520,29 @@ def _requisition_raiser_from_events(db: Session, ticket_id: str) -> Optional[str
     return ev.actor_id if ev else None
 
 
+def migrate_stuck_quotation_request_logs() -> None:
+    """Older builds saved request remarks without advancing to pending_quotation."""
+    if not inspect(engine).has_table("tickets"):
+        return
+    with SessionLocal() as db:
+        stuck = (
+            db.query(Ticket)
+            .filter(
+                Ticket.status == S.QUOTATION_REQUESTED,
+                Ticket.quotation_request_note.isnot(None),
+                Ticket.quotation_request_note != "",
+            )
+            .all()
+        )
+        if not stuck:
+            return
+        now = _now()
+        for ticket in stuck:
+            ticket.status = S.PENDING_QUOTATION
+            ticket.stage_entered_at = now
+        db.commit()
+
+
 def backfill_requisition_by() -> None:
     """Tickets requisitioned before requisition_by existed stay routed to site store otherwise."""
     if not inspect(engine).has_table("tickets") or not inspect(engine).has_table("ticket_events"):
@@ -579,6 +602,7 @@ async def lifespan(app: FastAPI):
     add_missing_columns()
     migrate_legacy_user_roles()
     backfill_requisition_by()
+    migrate_stuck_quotation_request_logs()
     with SessionLocal() as db:
         seed_initial_data(db)
     yield
@@ -1098,16 +1122,7 @@ def note_quotation_requested(
     else:
         note = (payload.note or "").strip()
         ticket.quotation_request_note = note
-        db.add(
-            TicketEvent(
-                ticket_id=ticket.ticket_id,
-                actor_id=actor.user_id,
-                from_status=S.QUOTATION_REQUESTED.value,
-                to_status=S.QUOTATION_REQUESTED.value,
-                note=f"Quotation requested: {note}",
-                created_at=_now(),
-            )
-        )
+        move_ticket(db, ticket, S.PENDING_QUOTATION, actor, note=f"Quotation requested: {note}")
     return finish(db, ticket)
 
 
@@ -1282,9 +1297,7 @@ def assert_may_manage_file_kind(user: User, ticket: Ticket, kind: FileKind) -> N
     if kind == FileKind.QUOTATION:
         if effective_role(user.role) not in MECH:
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")
-        if ticket.status == S.QUOTATION_REQUESTED and not ticket.quotation_request_note:
-            raise HTTPException(status_code=409, detail="Log the quotation request before attaching the vendor quotation.")
-        if ticket.status not in (S.QUOTATION_REQUESTED, S.PENDING_QUOTATION):
+        if ticket.status not in (S.PENDING_QUOTATION,):
             raise HTTPException(
                 status_code=409,
                 detail="Quotation files can only be changed while the quotation is being prepared.",

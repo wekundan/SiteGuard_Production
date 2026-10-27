@@ -476,9 +476,9 @@
       const r = effectiveRole(state.me.role);
       if (f.kind === "dispatch") return r === "central_store" && t.status === "pending_dispatch";
       if (f.kind === "quotation")
-        return (r === "mech_engineer" || r === "pm_incharge") && (t.status === "quotation_requested" || t.status === "pending_quotation");
+        return (r === "mech_engineer" || r === "pm_incharge") && (t.status === "pending_quotation" || (t.status === "quotation_requested" && t.quotation_request_note));
       if (f.kind === "quotation_request")
-        return (r === "mech_engineer" || r === "pm_incharge") && t.status === "quotation_requested" && !t.quotation_request_note;
+        return (r === "mech_engineer" || r === "pm_incharge") && t.status === "quotation_requested";
       if (f.kind === "bill") return (r === "deo" || r === "pm_incharge") && t.status === "cleared" && t.repair_venue === "outside";
       return false;
     }
@@ -519,6 +519,13 @@
       return rows.length ? `<div class="text-[13px] space-y-1 mt-3">${rows.join("")}</div>` : "";
     }
 
+    function vendorQuotationTask(t) {
+      return `<div class="text-[13px]" style="color:var(--muted);">Add remarks and the vendor quotation file(s), then submit to management.</div>
+        ${input(t, "qdetails", 'placeholder="Remarks (vendor, scope, amount if known)"', "textarea")}
+        ${deferredQuotationUpload(t, "Vendor quotation files (PDF or photo, max 5 MB each)")}
+        ${btn("quotation", t, "Submit to management", "primary")}`;
+    }
+
     function taskActions(t) {
       switch (t.status) {
         case "pending_inspection":
@@ -540,19 +547,14 @@
             ${btn("receive", t, "Confirm spares received", "success")}`;
         case "quotation_requested":
           if (!t.quotation_request_note) {
-            return `<div class="text-[13px]" style="color:var(--muted);">Log that you asked the vendor for a quotation. Attachment is optional (e.g. email screenshot).</div>
+            return `<div class="text-[13px]" style="color:var(--muted);">Log that you asked the vendor for a quotation. Optional attachment (e.g. email screenshot). Then continue to attach the vendor quote.</div>
               ${input(t, "qreqnote", 'placeholder="Remarks: vendor, date, reference"', "textarea")}
               ${upload(t, "quotation_request", "Optional supporting file (PDF or photo, max 5 MB)", true)}
-              ${btn("quotation_request_log", t, "Submit request log", "primary")}`;
+              ${btn("quotation_request_log", t, "Continue to vendor quotation", "primary")}`;
           }
-          return `<div class="text-[13px]" style="color:var(--muted);">Request logged. When the vendor quotation arrives, attach it and continue.</div>
-            ${deferredQuotationUpload(t, "Vendor quotation (PDF or photo, max 5 MB)")}
-            ${btn("quotation_received_submit", t, "Quotation received — continue", "primary")}`;
+          return vendorQuotationTask(t);
         case "pending_quotation":
-          return `<div class="text-[13px]" style="color:var(--muted);">Add remarks and the vendor quotation file(s), then submit to management.</div>
-            ${input(t, "qdetails", 'placeholder="Remarks (vendor, scope, amount if known)"', "textarea")}
-            ${deferredQuotationUpload(t, "Vendor quotation files (PDF or photo, max 5 MB each)")}
-            ${btn("quotation", t, "Submit to management", "primary")}`;
+          return vendorQuotationTask(t);
         case "pending_approval":
           return `${input(t, "note", 'placeholder="Note (required if rejecting)"')}
             ${pair(btn("approve", t, "Approve", "success"), btn("reject", t, "Reject", "danger"))}`;
@@ -698,24 +700,7 @@
               delete state.pendingUploads[`${id}:quotation_request`];
             }
             await apiRequest("PUT", `/api/tickets/${id}/quotation-request`, { note });
-          }, "Request log saved.", id);
-        }
-        case "quotation_received_submit": {
-          const t = state.tickets.find((x) => x.ticket_id === id);
-          const pendingList = state.pendingUploadLists[`${id}:quotation`] || [];
-          const pendingOne = state.pendingUploads[`${id}:quotation`];
-          const hasQuotation =
-            pendingList.length || pendingOne || (t && quotationFilesOnTicket(t).length);
-          if (!hasQuotation) return fail("Attach the vendor quotation before continuing.");
-          return act(async () => {
-            if (pendingOne) {
-              await postFile(id, "quotation", pendingOne);
-              delete state.pendingUploads[`${id}:quotation`];
-            }
-            for (const f of pendingList) await postFile(id, "quotation", f);
-            delete state.pendingUploadLists[`${id}:quotation`];
-            await apiRequest("PUT", `/api/tickets/${id}/quotation-request`, { quotation_received: true });
-          }, "Quotation received. Add remarks and submit to management.", id);
+          }, "Continue on the vendor quotation step.", id);
         }
         case "quotation": {
           const remarks = field(id, "qdetails");

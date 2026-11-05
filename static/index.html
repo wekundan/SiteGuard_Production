@@ -309,15 +309,53 @@
       if (!iso) return "—";
       return new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
     }
-    function hoursSince(iso) { return (Date.now() - new Date(iso).getTime()) / 3600000; }
+    // "Now" according to the server, so a wrong phone clock cannot skew any duration.
+    const nowMs = () => Date.now() + (state.clockOffset || 0);
+    function hoursSince(iso) { return (nowMs() - new Date(iso).getTime()) / 3600000; }
+
+    // Live format: seconds are shown (up to a day) so every clock visibly ticks.
+    function formatLive(hours) {
+      const secs = Math.max(0, Math.floor((hours || 0) * 3600));
+      const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+      const ss = String(s).padStart(2, "0"), mm = String(m).padStart(2, "0");
+      if (d >= 1) return `${d}d ${h}h ${mm}m`;
+      if (h >= 1) return `${h}h ${mm}m ${ss}s`;
+      return m >= 1 ? `${m}m ${ss}s` : `${s}s`;
+    }
+    // Spans marked data-live are refreshed every second by tick(); no re-render needed.
+    const liveAge = (iso) => `<span data-live="age" data-at="${iso}">${formatLive(hoursSince(iso))}</span>`;
+    function liveDowntime(t) {
+      if (t.cleared_at) return formatLive((new Date(t.cleared_at) - new Date(t.created_at)) / 3600000); // stopped clock
+      return `<span data-live="age" data-at="${t.created_at}">${formatLive(hoursSince(t.created_at))}</span>`;
+    }
 
     function slaBadge(t) {
       if (!t.sla_due_at || t.status === "closed") return "";
-      const hrs = (new Date(t.sla_due_at).getTime() - Date.now()) / 3600000;
-      const overdue = t.is_overdue || hrs < 0;
-      return overdue
-        ? `<span class="pill t-red"><i></i>Overdue ${formatDuration(-hrs)}</span>`
-        : `<span class="pill t-gray">Due in ${formatDuration(hrs)}</span>`;
+      const hrs = (new Date(t.sla_due_at).getTime() - nowMs()) / 3600000;
+      const overdue = hrs < 0;
+      return `<span class="pill ${overdue ? "t-red" : "t-gray"}" data-live="sla" data-due="${t.sla_due_at}"><i></i><span class="sla-text">${
+        overdue ? "Overdue " + formatLive(-hrs) : "Due in " + formatLive(hrs)}</span></span>`;
+    }
+
+    function tick() {
+      if (!state.me) return;
+      document.querySelectorAll('[data-live="age"]').forEach((el) => {
+        const txt = formatLive(hoursSince(el.getAttribute("data-at")));
+        if (el.textContent !== txt) el.textContent = txt;
+      });
+      document.querySelectorAll('[data-live="sla"]').forEach((el) => {
+        const hrs = (new Date(el.getAttribute("data-due")).getTime() - nowMs()) / 3600000;
+        const overdue = hrs < 0;
+        const txt = overdue ? "Overdue " + formatLive(-hrs) : "Due in " + formatLive(hrs);
+        const label = el.querySelector(".sla-text");
+        if (label.textContent !== txt) label.textContent = txt;
+        if (overdue && !el.classList.contains("t-red")) { // crossed the deadline while the screen was open
+          el.classList.remove("t-gray");
+          el.classList.add("t-red");
+          const card = el.closest(".card");
+          if (card && !card.classList.contains("done")) card.classList.add("overdue");
+        }
+      });
     }
     function statusBadge(t, pop = false) {
       const st = STATUS[t.status] || { label: t.status, tone: "t-gray" };
@@ -401,7 +439,12 @@
     }
 
     async function loadAll() {
+      const sentAt = Date.now();
       const data = await apiRequest("GET", "/api/bootstrap");
+      if (data.server_time) {
+        // Offset between the server clock and this device, assuming the reply took half the round trip.
+        state.clockOffset = new Date(data.server_time).getTime() - (sentAt + Date.now()) / 2;
+      }
       state.me = data.me;
       state.machines = data.machines;
       state.tickets = data.tickets;
@@ -564,7 +607,7 @@
       const t = state.tickets.find((x) => x.machine_id === ack.machineId && x.status === "pending_inspection");
       ackEl.classList.remove("hidden");
       ackEl.innerHTML = `<div class="ack" role="status" style="margin-bottom:1rem;"><span class="tick">✓</span>
-        <div>Breakdown reported for ${esc(ack.name)}<small>The mechanical team has been notified${t ? " · inspection " + (t.is_overdue ? "overdue" : "due in " + formatDuration((new Date(t.sla_due_at) - Date.now()) / 3600000)) : ""}. Track it on the Board.</small></div></div>`;
+        <div>Breakdown reported for ${esc(ack.name)}<small>The mechanical team has been notified${t ? " · inspection " + (t.is_overdue ? "overdue" : "due in " + formatLive((new Date(t.sla_due_at) - nowMs()) / 3600000)) : ""}. Track it on the Board.</small></div></div>`;
     }
 
     // ---- task cards -------------------------------------------------------
@@ -742,7 +785,7 @@
           return btn("clear", t, "Mark breakdown cleared", "success");
         case "cleared": {
           const outside = t.repair_venue === "outside";
-          return `<div class="text-[13px]" style="color:var(--muted);">Downtime: <strong style="color:var(--ink);">${formatDuration(t.downtime_hours)}</strong>. Log the closure record.${
+          return `<div class="text-[13px]" style="color:var(--muted);">Downtime: <strong style="color:var(--ink);">${liveDowntime(t)}</strong>. Log the closure record.${
             outside && t.quote_amount != null ? ` Approved quotation: <strong style="color:var(--ink);">${inr(t.quote_amount)}</strong>.` : ""}</div>
             ${input(t, "root", 'placeholder="Root cause"', "textarea")}
             ${outside ? upload(t, "bill", "Vendor bill: PDF or photo, max 5 MB (required)") + input(t, "invoice", 'placeholder="Invoice number (optional)"') : ""}
@@ -760,7 +803,7 @@
       return `<div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <div class="font-semibold text-[15px] leading-snug">${esc(m ? m.name : "Machine")}</div>
-          <div class="text-xs mt-0.5" style="color:var(--muted);">${esc(m ? m.location : "")} · reported ${formatDuration(hoursSince(t.created_at))} ago</div>
+          <div class="text-xs mt-0.5" style="color:var(--muted);">${esc(m ? m.location : "")} · reported ${liveAge(t.created_at)} ago</div>
         </div>
         <div class="flex flex-col items-end gap-1.5">${statusBadge(t, pop)}${slaBadge(t)}</div>
       </div>`;
@@ -838,7 +881,7 @@
           return `<div class="card p-5 ${t.is_overdue ? "overdue" : ""}">
             ${ticketHeader(t)}${progressHtml(t)}${ticketDetails(t)}
             <div class="flex items-center justify-between mt-3">
-              <span class="text-xs" style="color:var(--muted);">Downtime ${formatDuration(t.downtime_hours)}</span>
+              <span class="text-xs" style="color:var(--muted);">Downtime ${liveDowntime(t)}</span>
               <button type="button" data-history="${t.ticket_id}" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">${open ? "Hide history" : "History"}</button>
             </div>${timeline}</div>`;
         }).join("");
@@ -1200,6 +1243,10 @@
       });
 
       setInterval(pullFromServerIfIdle, 6000);
+      setInterval(tick, 1000);
+      // Coming back to the app (phone unlock, tab switch) refreshes immediately instead of waiting for the next poll.
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") pullFromServerIfIdle(); });
+      window.addEventListener("online", pullFromServerIfIdle);
       if (localStorage.getItem(TOKEN_KEY)) startSession().catch(showLogin);
       else showLogin();
     });

@@ -17,6 +17,8 @@ Every status change is recorded in `ticket_events` (who, when, from, to, note); 
 - After a save the card confirms in place (green flash, "recorded" banner, new status badge). If the ticket moves to another team, a confirmation card
   takes its place for a few seconds ("Now with Central store") before fading.
 - Remarks appear immediately as "sending…"; errors show inside the card as well as in the toast; attached files show as completed.
+- Timers are live: "reported … ago", downtime and "Due in / Overdue" tick every second, and a badge turns red the moment its deadline passes.
+  Durations use the server's clock (`server_time` in `/api/bootstrap`), so a wrong phone clock cannot skew them; the app also refreshes when you return to it.
 - The login screen shows the UI build number, and `/api/bootstrap` returns `app_version`, so you can confirm a deploy picked up the latest UI.
 
 ## Quotation and bill attachments

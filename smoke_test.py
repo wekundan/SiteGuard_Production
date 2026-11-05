@@ -55,6 +55,8 @@ with TestClient(main.app) as c:
         "bootstrap carries stage labels",
     )
     check(mech_boot.get("app_version") == main.APP_UI_VERSION, "bootstrap exposes app version for deploy checks")
+    st = mech_boot.get("server_time", "")
+    check(st.endswith(("Z", "+00:00")) and abs((main._now() - main.datetime.fromisoformat(st)).total_seconds()) < 60, "bootstrap carries timezone-aware server time")
     check(isinstance(mech_boot.get("my_tasks"), list), "bootstrap returns my_tasks queue")
 
     # --- SOP 1: reporting ---------------------------------------------------

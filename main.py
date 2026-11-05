@@ -946,6 +946,7 @@ def get_bootstrap_data(me: User = Depends(get_current_user), db: Session = Depen
         ],
         "stage_labels": STAGE_LABELS,
         "app_version": APP_UI_VERSION,
+        "server_time": _now().isoformat(),  # lets the UI correct for a wrong device clock
     }
 
 

@@ -19,6 +19,8 @@ Every status change is recorded in `ticket_events` (who, when, from, to, note); 
 - Remarks appear immediately as "sending…"; errors show inside the card as well as in the toast; attached files show as completed.
 - The Board's History is a timeline of action-titled cards, newest first: title (e.g. "Quotation Rejected"), time, author and role, the stage it moved to,
   and a labelled note box (e.g. "Rejection Reason"). Green = completed, amber = waiting, red = rejection. `GET /api/tickets/{id}/events` now includes `actor_role`.
+- **Machine history (Dashboard):** breakdowns per machine over the last 12 months, with total downtime and cost; tap a machine to see each repair.
+  It is computed from the existing tickets, so there is nothing extra to maintain. The demo seed includes a few past repairs (one older than a year, which is excluded).
 - Timers are live: "reported … ago", downtime and "Due in / Overdue" tick every second, and a badge turns red the moment its deadline passes.
   Durations use the server's clock (`server_time` in `/api/bootstrap`), so a wrong phone clock cannot skew them; the app also refreshes when you return to it.
 - The login screen shows the UI build number, and `/api/bootstrap` returns `app_version`, so you can confirm a deploy picked up the latest UI.

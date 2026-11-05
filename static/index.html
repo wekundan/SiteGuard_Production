@@ -213,6 +213,13 @@
           <tbody id="stage-table"></tbody>
         </table></div>
       </div>
+      <div class="card overflow-hidden">
+        <div class="px-5 py-4" style="border-bottom:1px solid var(--line);">
+          <div class="label">Machine history · last 12 months</div>
+          <div id="machine-history-summary" class="text-xs mt-1" style="color:var(--muted);"></div>
+        </div>
+        <div id="machine-history"></div>
+      </div>
     </section>
   </main>
 
@@ -276,6 +283,7 @@
       appVersion: "",
       pendingUploads: {},
       pendingUploadLists: {},
+      openMachine: {},   // machineId -> history expanded on the dashboard
       busy: {},          // ticketId (or "report") -> action key while a request is in flight
       acks: {},          // ticketId -> { message, index, played } success confirmation shown on/in place of the card
       cardErrors: {},    // ticketId -> message shown inside the card until the next attempt
@@ -980,7 +988,58 @@
         }).join("");
     }
 
+    // Breakdowns per machine over the last 12 months, computed from the tickets already loaded.
+    // Each breakdown ticket counts once (open ones included); cost is the recorded repair cost of closed tickets.
+    function renderMachineHistory() {
+      const since = nowMs() - 365 * 86400000;
+      const rows = state.machines.map((m) => {
+        const list = state.tickets
+          .filter((t) => t.machine_id === m.machine_id && new Date(t.created_at).getTime() >= since)
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        return {
+          m, list,
+          downtime: list.reduce((s, t) => s + (t.downtime_hours || 0), 0),
+          cost: list.reduce((s, t) => s + (t.repair_cost || 0), 0)
+        };
+      }).sort((a, b) => b.list.length - a.list.length || a.m.name.localeCompare(b.m.name));
+
+      const total = rows.reduce((s, r) => s + r.list.length, 0);
+      $("machine-history-summary").textContent =
+        `${total} breakdown${total === 1 ? "" : "s"} across ${rows.filter((r) => r.list.length).length} of ${rows.length} machines. Tap a machine to see its repairs.`;
+
+      const head = `<div class="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-5 py-2.5 label" style="background:#faf9f6;">
+        <span>Machine</span><span class="text-right">Breakdowns</span><span class="text-right">Downtime</span><span class="text-right">Cost</span></div>`;
+      $("machine-history").innerHTML = head + rows.map(({ m, list, downtime, cost }) => {
+        const open = !!state.openMachine[m.machine_id];
+        const detail = open
+          ? `<div class="px-5 pb-4 pt-1 space-y-2" style="background:#fcfbf9;">${
+            list.length === 0
+              ? `<div class="text-xs" style="color:var(--muted);">No breakdowns in the last 12 months.</div>`
+              : list.map((t) => `
+                <div class="rounded-xl p-3" style="background:#fff; border:1px solid var(--line);">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0"><div class="text-sm font-semibold">${esc(t.issue_description || "Awaiting inspection")}</div>
+                      <div class="text-xs mt-0.5" style="color:var(--muted);">${formatDateTime(t.created_at)}${t.root_cause ? " · Cause: " + esc(t.root_cause) : ""}</div></div>
+                    ${statusBadge(t)}
+                  </div>
+                  <div class="flex gap-4 mt-2 text-xs" style="color:var(--muted);">
+                    <span>Downtime <strong style="color:var(--ink);">${formatDuration(t.downtime_hours)}</strong></span>
+                    <span>Cost <strong style="color:var(--ink);">${t.repair_cost != null ? inr(t.repair_cost) : "—"}</strong></span>
+                  </div>
+                </div>`).join("")}</div>`
+          : "";
+        return `<div style="border-top:1px solid var(--line);">
+          <button type="button" data-machine-history="${m.machine_id}" class="w-full grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center px-5 py-3 text-left text-sm" aria-expanded="${open}">
+            <span class="min-w-0"><span class="font-semibold">${esc(m.name)}</span><span class="block text-xs" style="color:var(--muted);">${esc(m.location)}</span></span>
+            <span class="text-right font-semibold" style="color:${list.length >= 3 ? "#be123c" : "var(--ink)"};">${list.length}</span>
+            <span class="text-right" style="color:var(--muted);">${list.length ? formatDuration(downtime) : "—"}</span>
+            <span class="text-right" style="color:var(--muted);">${cost ? inr(cost) : "—"}</span>
+          </button>${detail}</div>`;
+      }).join("");
+    }
+
     function renderDashboard() {
+      renderMachineHistory();
       const mt = state.metrics;
       if (!mt) return;
       const pastSla = Object.values(mt.overdue_by_stage).reduce((a, b) => a + b, 0);
@@ -1318,6 +1377,14 @@
           state.lastClicked = b.getAttribute("data-action");
           runTaskAction(state.lastClicked, b.getAttribute("data-ticket"));
         }
+      });
+
+      $("machine-history").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-machine-history]");
+        if (!b) return;
+        const id = b.getAttribute("data-machine-history");
+        state.openMachine[id] = !state.openMachine[id];
+        renderMachineHistory();
       });
 
       $("board-show-closed").addEventListener("change", renderBoard);

@@ -189,14 +189,17 @@ with TestClient(main.app) as c:
     check(tk[t1]["sla_due_at"] is None, "closed ticket has no SLA")
     m = c.get("/api/dashboard/metrics", headers=pm).json()
     check(m["overdue_by_stage"].get("pending_inspection") == 1, "overdue counts by stage")
-    check(m["closed_tickets"] == 2 and m["total_repair_cost"] == 46200.5, "closed count and total cost")
+    check(m["closed_tickets"] == 7 and m["total_repair_cost"] == 84300.5, "closed count and total cost (incl. 5 seeded past repairs)")
+    past = [t for t in tk.values() if t["machine_id"] == M_BROKEN]
+    in_year = [t for t in past if (main._now() - main.datetime.fromisoformat(t["created_at"])).days <= 365]
+    check(len(past) == 5 and len(in_year) == 4, "seed gives machine 1 four breakdowns in the last year and one older")
     check(m["tickets_by_stage"]["pending_vendor_dispatch"] == 1 and "pending_inspection" in m["stage_average_hours"], "stage counts and averages")
     check(m["average_downtime_hours"] is not None, "average downtime computed")
 
     # --- demo reset --------------------------------------------------------
     call("POST", "/api/reset-demo", pm, 403, "only management resets")
     call("POST", "/api/reset-demo", mgmt, 200, "management resets")
-    check(len(tickets()) == 6, "reset restores seed tickets")
+    check(len(tickets()) == 11, "reset restores seed tickets")
 
 main.engine.dispose()
 os.remove("smoke_test.db")

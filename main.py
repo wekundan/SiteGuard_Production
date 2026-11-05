@@ -470,6 +470,28 @@ def seed_initial_data(db: Session) -> None:
         cleared_at=ago(hours=20),
     )
 
+    # Past repairs so the dashboard's 12-month machine history has something to show (111 is older than a year).
+    CLO = "closed"
+    for n, machine, days, issue, cause, cost in [
+        (107, 1, 40, "Hydraulic hose burst", "Worn hose", 3200.0),
+        (108, 1, 130, "Track chain tension loose", "Pin and bush wear", 5400.0),
+        (109, 1, 250, "Engine overheating", "Radiator clogged with dust", 12800.0),
+        (110, 5, 200, "Blade cutting edge worn", "Normal wear, late replacement", 7600.0),
+        (111, 1, 400, "Swing bearing noise", "Bearing wear", 9100.0),
+    ]:
+        h = days * 24
+        add(
+            n, machine, S.CLOSED,
+            [(U_SITE, PI, h), (U_MECH, PPC, h - 1), (U_MECH, RIP, h - 2), (U_MECH, CL, h - 10), (U_DEO, CLO, h - 12)],
+            issue_description=issue,
+            repair_venue=RepairVenue.IN_HOUSE,
+            root_cause=cause,
+            repair_cost=cost,
+            inspected_at=ago(hours=h - 1),
+            cleared_at=ago(hours=h - 10),
+            closed_at=ago(hours=h - 12),
+        )
+
     db.add_all(users)
     db.add_all(machines)
     db.flush()  # parents must exist before dependent rows

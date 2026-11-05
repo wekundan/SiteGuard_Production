@@ -1386,7 +1386,7 @@ def delete_file(file_id: str, user: User = Depends(get_current_user), db: Sessio
 @app.get("/api/tickets/{ticket_id}/events")
 def get_ticket_events(ticket_id: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list:
     rows = (
-        db.query(TicketEvent, User.name)
+        db.query(TicketEvent, User.name, User.role)
         .join(User, User.user_id == TicketEvent.actor_id)
         .filter(TicketEvent.ticket_id == ticket_id)
         .order_by(TicketEvent.created_at.asc(), TicketEvent.event_id.asc())
@@ -1397,10 +1397,11 @@ def get_ticket_events(ticket_id: str, _: User = Depends(get_current_user), db: S
             "from_status": e.from_status,
             "to_status": e.to_status,
             "actor": name,
+            "actor_role": role.value if hasattr(role, "value") else str(role),
             "note": e.note,
             "created_at": as_utc(e.created_at).isoformat(),
         }
-        for e, name in rows
+        for e, name, role in rows
     ]
 
 

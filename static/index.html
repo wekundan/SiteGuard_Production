@@ -48,10 +48,26 @@
     @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
     .t-red i { animation: blink 1.4s infinite ease-in-out; }
 
-    .tl { position: relative; padding-left: 1.15rem; }
-    .tl::before { content: ""; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 1px; background: var(--line); }
-    .tl-item { position: relative; padding-bottom: .65rem; }
-    .tl-item::before { content: ""; position: absolute; left: -1.15rem; top: .3rem; width: 9px; height: 9px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 3px #fff; }
+    /* ---- history timeline: action-titled cards on a vertical rail ---- */
+    .tl { position: relative; padding-left: 1.5rem; }
+    .tl::before { content: ""; position: absolute; left: 7px; top: 10px; bottom: 10px; width: 2px; background: var(--line); border-radius: 2px; }
+    .tl-item { position: relative; padding-bottom: .8rem; --tone: #c9973f; --tone-bg: #fdf3dc; --tone-ink: #8a5a00; }
+    .tl-item:last-child { padding-bottom: 0; }
+    .tl-item::before { content: ""; position: absolute; left: -1.5rem; top: .85rem; width: 16px; height: 16px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 0 4px #fff; }
+    .tl-item.tone-green { --tone: #0f766e; --tone-bg: #e2f4ec; --tone-ink: #0b5a46; }
+    .tl-item.tone-amber { --tone: #c9973f; --tone-bg: #fdf3dc; --tone-ink: #8a5a00; }
+    .tl-item.tone-red { --tone: #be123c; --tone-bg: #fde7eb; --tone-ink: #9f1239; }
+    .tl-card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: .7rem .8rem; }
+    .tl-item.tone-red .tl-card { border-color: #f1b8c4; background: #fffafb; }
+    .tl-head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+    .tl-title { font-weight: 700; font-size: .85rem; color: var(--ink); line-height: 1.3; }
+    .tl-time { font-size: .7rem; color: var(--muted); white-space: nowrap; padding-top: .1rem; }
+    .tl-by { font-size: .74rem; color: var(--muted); margin-top: .15rem; }
+    .tl-move { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; font-size: .7rem; color: var(--muted); font-weight: 600; }
+    .tl-note { margin-top: .55rem; padding: .5rem .65rem; border-radius: 8px; background: var(--tone-bg); border-left: 3px solid var(--tone); }
+    .tl-note-label { font-size: .64rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--tone-ink); }
+    .tl-note blockquote { margin: .15rem 0 0; font-size: .82rem; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+    .tl-latest { display: inline-block; margin-left: .45rem; padding: .05rem .4rem; border-radius: 999px; background: var(--navy); color: #fff; font-size: .6rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; vertical-align: middle; }
 
     .tab { flex: 1; padding: .8rem .5rem; font-size: .8rem; font-weight: 600; color: #8da0b4; border-bottom: 2px solid transparent;
       display: flex; align-items: center; justify-content: center; gap: .4rem; transition: color .15s; }
@@ -861,6 +877,87 @@
         : cards.join("");
     }
 
+    // ---- history: turn raw log rows into action-titled timeline cards ----------
+    const ROLE_LABEL = {
+      site_office: "Sr Civil Engineer", deo: "P&M DEO", mech_engineer: "Mechanical Engineer", pm_incharge: "P&M In-charge",
+      site_store: "Site Store", central_store: "Central Store", management: "Management",
+      supervisor: "Mechanical Engineer", head_office: "Central Store" // legacy role names
+    };
+    // Notes the server writes that only repeat what the title already says.
+    const GENERIC_NOTES = new Set([
+      "Spares available in site store", "Spares received at site", "Breakdown cleared", "Quotation request logged", "Quotation approved"
+    ]);
+    const stageLabel = (s) => (STATUS[s] || { label: s }).label;
+
+    // tone: green = completed/positive, amber = waiting/in progress, red = rejection.
+    function describeEvent(e) {
+      const from = e.from_status, to = e.to_status;
+      const raw = (e.note || "").trim();
+      const after = (re) => raw.replace(re, "").trim();
+      const out = (title, tone, label = "", text = "", extra = {}) =>
+        ({ title, tone, label, text: GENERIC_NOTES.has(text) ? "" : text, ...extra });
+      if (!from) return out("Breakdown Reported", "amber");
+      switch (`${from}>${to}`) {
+        case "pending_inspection>pending_parts_check":
+          return out("Sent to In-house Workshop", "amber", "Inspection findings", after(/^in_house:\s*/));
+        case "pending_inspection>quotation_requested":
+          return out("Outside Workshop Selected", "amber", "Inspection findings", after(/^outside:\s*/));
+        case "quotation_requested>quotation_requested":
+          return out("Remark Added to Quotation Request", "amber", "Remark", raw, { same: true });
+        case "quotation_requested>pending_quotation":
+          return out("Quotation Requested", "amber", "Details", raw);
+        case "pending_quotation>pending_approval":
+          return out("Quotation Submitted for Approval", "amber", "Remarks", raw);
+        case "pending_approval>pending_vendor_dispatch":
+          return out("Quotation Approved", "green", "Management Note", raw);
+        case "pending_approval>pending_quotation":
+          return out("Quotation Rejected", "red", "Rejection Reason", after(/^Rejected:\s*/), { rejected: true });
+        case "pending_vendor_dispatch>vendor_repair_in_progress":
+          return out("Machine Sent to Vendor", "green", "Dispatch details", after(/^Sent to vendor:\s*/));
+        case "pending_vendor_dispatch>pending_vendor_dispatch":
+          return out("Machine Not Yet Sent to Vendor", "amber", "Remarks", after(/^Not sent yet:\s*/), { same: true });
+        case "vendor_repair_in_progress>cleared":
+          return out("Vehicle Received, Breakdown Cleared", "green", "Receipt remarks", after(/^Received at site:\s*/));
+        case "pending_parts_check>repair_in_progress":
+          return out("Spares Available, Repair Started", "green", "Site store", raw);
+        case "pending_parts_check>pending_dispatch":
+          return out("Requisition Raised", "amber", "Parts required", after(/^Requisition:\s*/));
+        case "pending_dispatch>in_transit":
+          return out("Spares Dispatched", "green", "Dispatch details", raw);
+        case "in_transit>repair_in_progress":
+          return out("Spares Received, Repair Started", "green", "Receipt", raw);
+        case "repair_in_progress>cleared":
+          return out("Breakdown Cleared", "green", "Note", raw);
+        case "cleared>closed":
+          return out("Report Closed", "green", "Root cause", after(/^Root cause:\s*/));
+        default:
+          return out(`Status Changed to ${stageLabel(to)}`, "amber", "Note", raw, { same: from === to });
+      }
+    }
+
+    function historyHtml(events) {
+      if (!events) return `<div class="text-xs" style="color:var(--muted);">Loading history…</div>`;
+      if (!events.length) return `<div class="text-xs" style="color:var(--muted);">No history yet.</div>`;
+      // Newest first, so the current situation is the first thing you read.
+      const items = events.map((e) => ({ e, d: describeEvent(e) })).reverse();
+      return `<div class="tl">${items.map(({ e, d }, i) => {
+        const who = String(e.actor || "").replace(/\s*\([^)]*\)\s*$/, "");
+        const role = ROLE_LABEL[e.actor_role] || "";
+        const moveLabel = d.rejected ? "Returned to" : d.same ? "Still at" : "Moved to";
+        return `<div class="tl-item tone-${d.tone}">
+          <div class="tl-card">
+            <div class="tl-head">
+              <div class="tl-title">${esc(d.title)}${i === 0 ? '<span class="tl-latest">Latest</span>' : ""}</div>
+              <div class="tl-time">${formatDateTime(e.created_at)}</div>
+            </div>
+            <div class="tl-by">${esc(who)}${role ? " · " + esc(role) : ""}</div>
+            ${e.from_status ? `<div class="tl-move">${moveLabel} ${statusBadge({ status: e.to_status })}</div>` : ""}
+            ${d.text ? `<div class="tl-note"><div class="tl-note-label">${esc(d.label)}</div><blockquote>${esc(d.text)}</blockquote></div>` : ""}
+          </div>
+        </div>`;
+      }).join("")}</div>`;
+    }
+
     function renderBoard() {
       const showClosed = $("board-show-closed").checked;
       const list = state.tickets
@@ -872,11 +969,7 @@
           const open = !!state.openHistory[t.ticket_id];
           const events = state.history[t.ticket_id];
           const timeline = open
-            ? `<div class="mt-4 pt-4" style="border-top:1px solid var(--line);"><div class="tl text-xs">${
-              !events ? `<span style="color:var(--muted);">Loading…</span>` : events.map((e) => `
-                <div class="tl-item"><div class="font-semibold">${esc((STATUS[e.to_status] || { label: e.to_status }).label)}</div>
-                <div style="color:var(--muted);">${formatDateTime(e.created_at)} · ${esc(e.actor)}</div>
-                ${e.note ? `<div class="mt-0.5">${esc(e.note)}</div>` : ""}</div>`).join("")}</div></div>`
+            ? `<div class="mt-4 pt-4" style="border-top:1px solid var(--line);">${historyHtml(events)}</div>`
             : "";
           return `<div class="card p-5 ${t.is_overdue ? "overdue" : ""}">
             ${ticketHeader(t)}${progressHtml(t)}${ticketDetails(t)}

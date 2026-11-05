@@ -95,8 +95,10 @@ with TestClient(main.app) as c:
     call("PUT", f"/api/tickets/{t1}/close", mech, 403, "mechanical engineer cannot close register", close)
     call("PUT", f"/api/tickets/{t1}/close", deo, 200, "DEO closes with root cause and cost", close)
     call("PUT", f"/api/tickets/{t1}/close", pm, 409, "cannot close twice", close)
-    ev = [e["to_status"] for e in c.get("/api/tickets/%s/events" % t1, headers=mgmt).json()]
-    check(ev == ["pending_inspection", "pending_parts_check", "pending_dispatch", "in_transit", "repair_in_progress", "cleared", "closed"], "event log follows SOP")
+    raw_events = c.get("/api/tickets/%s/events" % t1, headers=mgmt).json()
+    check(raw_events[0]["actor_role"] == "deo" and raw_events[-1]["actor_role"] == "deo", "events carry the author's role")
+    ev = [e["to_status"] for e in raw_events]
+    check(ev ==["pending_inspection", "pending_parts_check", "pending_dispatch", "in_transit", "repair_in_progress", "cleared", "closed"], "event log follows SOP")
     check(tickets()[t1]["repair_cost"] == 1200.5 and tickets()[t1]["downtime_hours"] >= 0, "closure record stored")
 
     # --- SOP 7: outside path with quotation approval -----------------------

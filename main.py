@@ -96,7 +96,7 @@ class UserRole(str, Enum):
     DEO = "deo"  # P&M Data Entry Operator: reports, closes the register entry
     MECH_ENGINEER = "mech_engineer"  # Mechanical Engineer: inspects, repairs
     PM_INCHARGE = "pm_incharge"  # P&M In-charge: inspects, repairs, closes
-    SITE_STORE = "site_store"  # site store stock check (receipt is mech engineer / P&M)
+    SITE_STORE = "site_store"  # confirms receipt of dispatched spares
     CENTRAL_STORE = "central_store"  # dispatches spares to site
     MANAGEMENT = "management"  # approves outside-repair quotations, oversight
 
@@ -110,7 +110,7 @@ class TicketStatus(str, Enum):
     PENDING_INSPECTION = "pending_inspection"
     PENDING_PARTS_CHECK = "pending_parts_check"  # in-house: mechanical team checks site store
     PENDING_DISPATCH = "pending_dispatch"  # requisition raised, central store to dispatch
-    IN_TRANSIT = "in_transit"  # dispatched; requisition raiser (mech) confirms receipt
+    IN_TRANSIT = "in_transit"  # dispatched; site store confirms receipt
     QUOTATION_REQUESTED = "quotation_requested"  # outside: waiting for the vendor to send a quotation
     PENDING_QUOTATION = "pending_quotation"  # outside: quotation received, details to be submitted
     PENDING_APPROVAL = "pending_approval"  # management approves quotation
@@ -184,7 +184,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.3.4")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.4.0")
 
 
 def hash_password(password: str) -> str:
@@ -809,7 +809,6 @@ _MECH_TASK_STATUSES = (
     S.PENDING_VENDOR_DISPATCH,
     S.VENDOR_REPAIR_IN_PROGRESS,
     S.REPAIR_IN_PROGRESS,
-    S.IN_TRANSIT,
 )
 # Single source of truth for the "My tasks" queue (mirrored in bootstrap for the SPA).
 TASK_STATUSES_BY_ROLE: dict[UserRole, tuple[TicketStatus, ...]] = {
@@ -817,7 +816,7 @@ TASK_STATUSES_BY_ROLE: dict[UserRole, tuple[TicketStatus, ...]] = {
     UserRole.DEO: (S.CLEARED,),
     UserRole.MECH_ENGINEER: _MECH_TASK_STATUSES,
     UserRole.PM_INCHARGE: _MECH_TASK_STATUSES + (S.CLEARED,),
-    UserRole.SITE_STORE: (),
+    UserRole.SITE_STORE: (S.IN_TRANSIT,),
     UserRole.CENTRAL_STORE: (S.PENDING_DISPATCH,),
     UserRole.MANAGEMENT: (S.PENDING_APPROVAL,),
 }
@@ -852,25 +851,8 @@ def task_statuses_for_role(role: UserRole) -> list[str]:
     return [s.value for s in TASK_STATUSES_BY_ROLE.get(effective_role(role), ())]
 
 
-def may_act_on_in_transit(me: User, ticket: Ticket) -> bool:
-    """In-transit receipt goes to whoever raised the requisition; P&M In-charge can cover any."""
-    if ticket.status != S.IN_TRANSIT:
-        return False
-    if not ticket.requisition_by:
-        return effective_role(me.role) in MECH
-    if effective_role(me.role) == UserRole.PM_INCHARGE:
-        return True
-    if effective_role(me.role) == UserRole.MECH_ENGINEER:
-        return ticket.requisition_by == me.user_id
-    return False
-
-
 def ticket_in_my_queue(me: User, ticket: Ticket) -> bool:
-    if ticket.status.value not in task_statuses_for_role(me.role):
-        return False
-    if ticket.status == S.IN_TRANSIT:
-        return may_act_on_in_transit(me, ticket)
-    return True
+    return ticket.status.value in task_statuses_for_role(me.role)
 
 
 def migrate_legacy_user_roles() -> None:
@@ -1060,21 +1042,16 @@ def dispatch_spares(
     return finish(db, ticket)
 
 
-# SOP 6: engineer who raised the requisition confirms spares received at site
+# SOP 6: site store confirms spares received at site
 @app.put("/api/tickets/{ticket_id}/receive", response_model=TicketResponse)
 def receive_spares(
     ticket_id: str,
-    actor: User = Depends(require_roles(*MECH)),
+    actor: User = Depends(require_roles(UserRole.SITE_STORE)),
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
     if ticket.status != S.IN_TRANSIT:
         raise HTTPException(status_code=409, detail="This ticket is not awaiting spare receipt.")
-    if ticket.requisition_by and effective_role(actor.role) == UserRole.MECH_ENGINEER and ticket.requisition_by != actor.user_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Only the engineer who raised the requisition can confirm receipt.",
-        )
     move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note="Spares received at site")
     ticket.eta_date = None
     return finish(db, ticket)

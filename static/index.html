@@ -70,6 +70,47 @@
     .btn-send { width: 2.5rem; height: 2.5rem; flex-shrink: 0; border: none; border-radius: 999px; background: var(--navy); color: #fff; font-size: 1.1rem; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
     .btn-send:hover { background: var(--navy-2); }
     .btn-send:active { transform: scale(.96); }
+
+    /* ---- action feedback: loading, success, progress ---- */
+    fieldset.actions { border: 0; margin: 0; min-width: 0; padding: 1rem 0 0; }
+    fieldset.actions:disabled .field { background: #f3f1ec; color: #8a8579; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; }
+    .btn.is-loading { cursor: progress; }
+    .btn-primary.is-loading:disabled { background: var(--navy); color: #fff; opacity: .85; }
+    .btn-success.is-loading:disabled { background: #0f766e; color: #fff; opacity: .85; }
+    .btn-alert.is-loading:disabled { background: #be123c; color: #fff; opacity: .85; }
+    .btn-outline.is-loading:disabled { background: #fff; color: var(--navy); opacity: .85; }
+    .btn-danger.is-loading:disabled { background: #fff; color: #be123c; opacity: .85; }
+
+    @keyframes flashRing {
+      0% { box-shadow: 0 0 0 0 rgba(15,118,110,.5), 0 12px 32px -20px rgba(16,24,40,.22); border-color: #0f766e; background: #eefaf6; }
+      60% { border-color: #0f766e; }
+      100% { box-shadow: 0 0 0 14px rgba(15,118,110,0), 0 12px 32px -20px rgba(16,24,40,.22); background: #fff; }
+    }
+    .card.flash { animation: flashRing 1.4s ease-out; }
+    @keyframes pop { 0% { transform: scale(.8); opacity: .2; } 60% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
+    .pop { animation: pop .5s ease-out; }
+    @keyframes enter { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+    .card.done { border-color: #9fd3c3; background: #f3fbf8; transition: opacity .55s ease, transform .55s ease; }
+    .card.done.enter { animation: enter .35s ease-out; }
+    .card.done.leaving { opacity: 0; transform: translateY(-6px); }
+
+    .tick { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #0f766e; color: #fff; font-size: .8rem; font-weight: 700; flex-shrink: 0; }
+    .tick.big { width: 34px; height: 34px; font-size: 1.1rem; }
+    .ack { display: flex; gap: .6rem; align-items: flex-start; padding: .65rem .8rem; border-radius: 12px; background: #e6f5ef; color: #0b5a46; font-size: .85rem; font-weight: 600; margin-bottom: .9rem; }
+    .ack small { display: block; font-weight: 500; color: #3f7a68; font-size: .75rem; margin-top: .1rem; }
+    .err { display: flex; gap: .6rem; align-items: flex-start; padding: .65rem .8rem; border-radius: 12px; background: #fdeef1; color: #9f1239; font-size: .85rem; font-weight: 600; margin-bottom: .9rem; }
+
+    .progress { display: flex; gap: 4px; margin-top: .85rem; }
+    .progress i { flex: 1; height: 5px; border-radius: 99px; background: #e6e3dc; transition: background .3s; }
+    .progress i.done { background: #0f766e; }
+    .progress i.cur { background: var(--gold); }
+    .progress-cap { font-size: .7rem; color: var(--muted); margin-top: .35rem; display: flex; justify-content: space-between; gap: .5rem; }
+    .upload-done { display: flex; gap: .6rem; align-items: center; padding: .7rem .8rem; border-radius: 12px; background: #eef8f4; border: 1px solid #b9e0d2; }
+    .remark-bubble.sending { opacity: .6; }
+    .remark-bubble.sending::after { content: " · sending…"; font-size: .7rem; color: var(--muted); }
+    @media (prefers-reduced-motion: reduce) { .card.flash, .pop, .card.done.enter, .spin { animation: none; } .card.done { transition: none; } }
   </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -93,7 +134,7 @@
     </nav>
   </header>
 
-  <div id="toast-container" class="hidden fixed top-16 inset-x-0 z-40 px-4 pointer-events-none">
+  <div id="toast-container" class="hidden fixed bottom-5 inset-x-0 z-40 px-4 pointer-events-none">
     <div id="toast-box" class="pointer-events-auto max-w-md mx-auto flex items-center justify-between gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-medium">
       <span id="toast-message"></span>
       <button id="btn-close-toast" type="button" class="text-xs opacity-70 hover:opacity-100" aria-label="Dismiss">✕</button>
@@ -120,6 +161,7 @@
   <main id="main-wrapper" class="hidden flex-1 max-w-4xl w-full mx-auto px-4 py-6">
 
     <section id="view-report" class="max-w-md mx-auto hidden">
+      <div id="report-ack" class="hidden"></div>
       <div class="card p-6 sm:p-7 space-y-5">
         <div>
           <h2 class="serif text-2xl" style="color: var(--navy);">Report a breakdown</h2>
@@ -135,7 +177,7 @@
       </div>
     </section>
 
-    <section id="view-tasks" class="max-w-lg mx-auto space-y-4 hidden"></section>
+    <section id="view-tasks" class="max-w-lg mx-auto space-y-4 hidden" aria-live="polite"></section>
 
     <section id="view-board" class="space-y-4 hidden">
       <div class="flex items-center justify-between">
@@ -182,7 +224,7 @@
 
     const MECH_TASKS = [
       "pending_inspection", "pending_parts_check", "quotation_requested", "pending_quotation",
-      "pending_vendor_dispatch", "vendor_repair_in_progress", "repair_in_progress", "in_transit"
+      "pending_vendor_dispatch", "vendor_repair_in_progress", "repair_in_progress"
     ];
     // Legacy Neon/sql seeds used supervisor / head_office — map to current SOP roles.
     const ROLE_ALIASES = { supervisor: "mech_engineer", head_office: "central_store" };
@@ -192,7 +234,7 @@
       mech_engineer: MECH_TASKS,
       supervisor: MECH_TASKS,
       pm_incharge: [...MECH_TASKS, "cleared"],
-      site_store: [],
+      site_store: ["in_transit"],
       central_store: ["pending_dispatch"],
       head_office: ["pending_dispatch"],
       management: ["pending_approval"]
@@ -217,7 +259,13 @@
       myTasks: null,
       appVersion: "",
       pendingUploads: {},
-      pendingUploadLists: {}
+      pendingUploadLists: {},
+      busy: {},          // ticketId (or "report") -> action key while a request is in flight
+      acks: {},          // ticketId -> { message, index, played } success confirmation shown on/in place of the card
+      cardErrors: {},    // ticketId -> message shown inside the card until the next attempt
+      optimistic: {},    // ticketId -> remarks shown immediately as "sending…"
+      reportAck: null,
+      lastClicked: null
     };
 
     function effectiveRole(role) {
@@ -271,9 +319,44 @@
         ? `<span class="pill t-red"><i></i>Overdue ${formatDuration(-hrs)}</span>`
         : `<span class="pill t-gray">Due in ${formatDuration(hrs)}</span>`;
     }
-    function statusBadge(t) {
+    function statusBadge(t, pop = false) {
       const st = STATUS[t.status] || { label: t.status, tone: "t-gray" };
-      return `<span class="pill ${st.tone}"><i></i>${st.label}</span>`;
+      return `<span class="pill ${st.tone}${pop ? " pop" : ""}"><i></i>${st.label}</span>`;
+    }
+
+    // Who picks the ticket up next, shown in the success confirmation.
+    const OWNER = {
+      pending_inspection: "Mechanical team", pending_parts_check: "Mechanical team", pending_dispatch: "Central store",
+      in_transit: "Site store", quotation_requested: "Mechanical team", pending_quotation: "Mechanical team",
+      pending_approval: "Management", pending_vendor_dispatch: "Mechanical team", vendor_repair_in_progress: "Mechanical team",
+      repair_in_progress: "Mechanical team", cleared: "DEO / P&M In-charge", closed: "Nobody — complete"
+    };
+
+    // Progress bar per repair route: steps before the current one are done.
+    const FLOW = {
+      in_house: {
+        steps: ["Reported", "Inspection", "Parts", "Repair", "Cleared", "Closed"],
+        at: { pending_inspection: 1, pending_parts_check: 2, pending_dispatch: 2, in_transit: 2, repair_in_progress: 3, cleared: 4, closed: 5 }
+      },
+      outside: {
+        steps: ["Reported", "Inspection", "Quotation", "Approval", "Vendor repair", "Cleared", "Closed"],
+        at: { pending_inspection: 1, quotation_requested: 2, pending_quotation: 2, pending_approval: 3, pending_vendor_dispatch: 4, vendor_repair_in_progress: 4, cleared: 5, closed: 6 }
+      },
+      unknown: {
+        steps: ["Reported", "Inspection", "Repair", "Cleared", "Closed"],
+        at: { pending_inspection: 1, cleared: 3, closed: 4 }
+      }
+    };
+
+    function progressHtml(t) {
+      const flow = FLOW[t.repair_venue] || FLOW.unknown;
+      const at = flow.at[t.status];
+      if (at == null) return "";
+      const closed = t.status === "closed";
+      const segs = flow.steps.map((_, i) => `<i class="${i < at || closed ? "done" : i === at ? "cur" : ""}"></i>`).join("");
+      const cap = closed ? "Complete" : `Step ${at + 1} of ${flow.steps.length} · ${flow.steps[at]}`;
+      return `<div class="progress" aria-hidden="true">${segs}</div>
+        <div class="progress-cap"><span>${esc(cap)}</span><span>${closed ? "" : "Next: " + esc(flow.steps[at + 1] || "Done")}</span></div>`;
     }
 
     function showToast(message, isError = false) {
@@ -336,22 +419,57 @@
     }
 
     // Runs a server action, then re-syncs. On failure shows the server's reason and re-syncs too.
-    async function act(action, successMessage, ticketId = null) {
+    // With a ticketId the card shows a loading state, ignores double clicks, then confirms the result in place.
+    async function act(action, successMessage, ticketId = null, keepDrafts = false) {
+      if (ticketId) {
+        if (state.busy[ticketId]) return false; // a request for this card is already running
+        const index = tasksFor(state.me.role).findIndex((t) => t.ticket_id === ticketId);
+        state.busy[ticketId] = state.lastClicked || true;
+        delete state.cardErrors[ticketId];
+        state.lastIndex = index;
+        renderAll();
+      }
+      const index = state.lastIndex;
       try {
         await action();
-        if (ticketId) Object.keys(state.drafts).filter((k) => k.startsWith(ticketId + ":")).forEach((k) => delete state.drafts[k]);
+        if (ticketId && !keepDrafts) Object.keys(state.drafts).filter((k) => k.startsWith(ticketId + ":")).forEach((k) => delete state.drafts[k]);
         showToast(successMessage);
+        if (ticketId) state.acks[ticketId] = { message: successMessage, index: Math.max(index, 0), played: false };
+        delete state.busy[ticketId];
         await refreshFromServer();
+        if (ticketId) {
+          scheduleAckExpiry(ticketId);
+          const el = document.querySelector(`[data-done="${ticketId}"], [data-card="${ticketId}"]`);
+          if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
         return true;
       } catch (e) {
         showToast(e.message, true);
+        if (ticketId) {
+          state.cardErrors[ticketId] = e.message;
+          delete state.busy[ticketId];
+        }
         if (e.status !== 401) await refreshFromServer().catch(() => {});
         return false;
       }
     }
 
+    // The confirmation fades after a few seconds. Removing nodes directly keeps typed text untouched.
+    function scheduleAckExpiry(id) {
+      setTimeout(() => {
+        const done = document.querySelector(`[data-done="${id}"]`);
+        if (done) done.classList.add("leaving");
+      }, 5400);
+      setTimeout(() => {
+        delete state.acks[id];
+        document.querySelectorAll(`[data-done="${id}"], [data-ack="${id}"]`).forEach((n) => n.remove());
+        if (state.me && state.activeView === "tasks" && !$("view-tasks").querySelector(".card")) renderAll();
+      }, 6000);
+    }
+
     async function pullFromServerIfIdle() {
       if (!state.me) return;
+      if (Object.keys(state.busy).length) return; // a save is in flight; its own refresh follows
       const tag = document.activeElement ? document.activeElement.tagName : "";
       if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return; // never re-render while typing
       try {
@@ -397,11 +515,6 @@
       let list = state.myTasks
         ? state.myTasks
         : state.tickets.filter((t) => taskStatusesForRole(role).includes(t.status));
-      if (!state.myTasks && state.me && r === "mech_engineer") {
-        list = list.filter(
-          (t) => t.status !== "in_transit" || !t.requisition_by || t.requisition_by === state.me.user_id
-        );
-      }
       return list.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     }
 
@@ -437,7 +550,21 @@
           `<option value="${m.machine_id}" ${m.status === "broken_down" ? "disabled" : ""} ${m.machine_id === state.selectedMachineId ? "selected" : ""}>${
             m.status === "broken_down" ? "● Broken — " : ""}${esc(m.name)} (${esc(m.location)})</option>`).join("");
       }
-      $("btn-submit-breakdown").disabled = !active.length;
+      const submitting = !!state.busy.report;
+      const submit = $("btn-submit-breakdown");
+      submit.disabled = !active.length || submitting;
+      submit.classList.toggle("is-loading", submitting);
+      submit.innerHTML = submitting ? '<span class="spin" aria-hidden="true"></span>Reporting…' : "Report breakdown";
+      sel.disabled = submitting;
+
+      // Confirmation panel after a successful report, with the inspection deadline pulled from the new ticket.
+      const ackEl = $("report-ack");
+      const ack = state.reportAck;
+      if (!ack) { ackEl.classList.add("hidden"); ackEl.innerHTML = ""; return; }
+      const t = state.tickets.find((x) => x.machine_id === ack.machineId && x.status === "pending_inspection");
+      ackEl.classList.remove("hidden");
+      ackEl.innerHTML = `<div class="ack" role="status" style="margin-bottom:1rem;"><span class="tick">✓</span>
+        <div>Breakdown reported for ${esc(ack.name)}<small>The mechanical team has been notified${t ? " · inspection " + (t.is_overdue ? "overdue" : "due in " + formatDuration((new Date(t.sla_due_at) - Date.now()) / 3600000)) : ""}. Track it on the Board.</small></div></div>`;
     }
 
     // ---- task cards -------------------------------------------------------
@@ -446,11 +573,23 @@
       tag === "textarea"
         ? `<textarea data-draft="${t.ticket_id}:${f}" rows="2" ${attrs} class="field">${dv(t, f)}</textarea>`
         : `<input data-draft="${t.ticket_id}:${f}" value="${dv(t, f)}" ${attrs} class="field" />`;
-    const btn = (action, t, label, variant) =>
-      `<button type="button" data-action="${action}" data-ticket="${t.ticket_id}" class="btn btn-${variant}">${label}</button>`;
+    // The clicked button shows a spinner; the whole actions area is a disabled <fieldset> while saving.
+    const btn = (action, t, label, variant) => {
+      const loading = state.busy[t.ticket_id] === action;
+      return `<button type="button" data-action="${action}" data-ticket="${t.ticket_id}" class="btn btn-${variant}${loading ? " is-loading" : ""}"${loading ? ' aria-busy="true"' : ""}>${
+        loading ? '<span class="spin" aria-hidden="true"></span>Saving…' : label}</button>`;
+    };
     const lbl = (text) => `<div class="label mb-1.5">${text}</div>`;
-    const upload = (t, kind, label, defer = false) =>
-      `<div class="rounded-xl p-3" style="background:#f4f8fc; border:1px dashed #9cb4cc;">
+    const UPLOAD_NAME = { dispatch: "Dispatch file", bill: "Vendor bill" };
+    const upload = (t, kind, label, defer = false) => {
+      const attached = defer ? [] : (t.files || []).filter((f) => f.kind === kind);
+      if (attached.length) {
+        // Already done: show it as completed instead of a live input (remove it from the Files list to replace it).
+        return `<div class="upload-done"><span class="tick">✓</span><div class="min-w-0">
+          <div class="label" style="color:#0b6b52;">${esc(UPLOAD_NAME[kind] || "File")} attached</div>
+          <div class="text-sm truncate">${attached.map((f) => esc(f.filename)).join(", ")}</div></div></div>`;
+      }
+      return `<div class="rounded-xl p-3" style="background:#f4f8fc; border:1px dashed #9cb4cc;">
         <div class="label mb-2">${label}</div>
         <input type="file" data-${defer ? "deferred-upload" : "upload"}="${t.ticket_id}:${kind}" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
           class="field" style="padding:.65rem; font-weight:600; background:#fff;" />
@@ -458,6 +597,7 @@
           ? `<div class="text-sm mt-2" style="color:#0b6b52;">${esc(state.pendingUploads[`${t.ticket_id}:${kind}`].name)}</div>`
           : ""}
       </div>`;
+    };
     const dispatchAttachStatus = (t) => {
       const n = (t.files || []).filter((f) => f.kind === "dispatch").length;
       return n
@@ -533,8 +673,10 @@
 
     function remarkThreadHtml(t) {
       const lines = (t.quotation_request_note || "").split("\n").filter(Boolean);
-      if (!lines.length) return "";
-      return `<div class="remark-thread">${lines.map((line) => `<div class="remark-bubble">${esc(line)}</div>`).join("")}</div>`;
+      const sending = state.optimistic[t.ticket_id] || [];
+      if (!lines.length && !sending.length) return "";
+      return `<div class="remark-thread">${lines.map((line) => `<div class="remark-bubble">${esc(line)}</div>`).join("")}${
+        sending.map((s) => `<div class="remark-bubble sending">${esc(s)}</div>`).join("")}</div>`;
     }
 
     function quotationRemarkComposer(t) {
@@ -613,26 +755,67 @@
       }
     }
 
-    function ticketHeader(t) {
+    function ticketHeader(t, pop = false) {
       const m = getMachine(t.machine_id);
       return `<div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <div class="font-semibold text-[15px] leading-snug">${esc(m ? m.name : "Machine")}</div>
           <div class="text-xs mt-0.5" style="color:var(--muted);">${esc(m ? m.location : "")} · reported ${formatDuration(hoursSince(t.created_at))} ago</div>
         </div>
-        <div class="flex flex-col items-end gap-1.5">${statusBadge(t)}${slaBadge(t)}</div>
+        <div class="flex flex-col items-end gap-1.5">${statusBadge(t, pop)}${slaBadge(t)}</div>
       </div>`;
+    }
+
+    // A card still in my queue after an action (next step is mine too): green flash, "recorded" banner, new badge.
+    function taskCard(t) {
+      const ack = state.acks[t.ticket_id];
+      const play = !!ack && !ack.played;
+      if (ack) ack.played = true;
+      const busy = !!state.busy[t.ticket_id];
+      const err = state.cardErrors[t.ticket_id];
+      const owner = OWNER[t.status] || "";
+      const banner = ack
+        ? `<div class="ack" role="status" data-ack="${t.ticket_id}"><span class="tick">✓</span><div>${esc(ack.message)}<small>Now: ${esc((STATUS[t.status] || {}).label || t.status)} · with ${esc(owner)}</small></div></div>`
+        : "";
+      const errBanner = err ? `<div class="err" role="alert"><span>⚠</span><div>${esc(err)}</div></div>` : "";
+      return `<div class="card p-5 ${t.is_overdue ? "overdue" : ""} ${play ? "flash" : ""}" data-card="${t.ticket_id}">
+          ${banner}${errBanner}
+          ${ticketHeader(t, play)}${progressHtml(t)}${ticketDetails(t)}
+          <fieldset class="actions space-y-2.5 mt-4" style="border-top:1px solid var(--line);" ${busy ? "disabled" : ""}>${taskActions(t)}</fieldset>
+        </div>`;
+    }
+
+    // The ticket moved on to someone else, so it leaves my queue: show a confirmation in its place, then fade.
+    function doneCard(id, ack) {
+      const t = state.tickets.find((x) => x.ticket_id === id);
+      if (!t) return "";
+      const m = getMachine(t.machine_id);
+      const enter = !ack.played;
+      ack.played = true;
+      return `<div class="card done p-4 ${enter ? "enter" : ""}" data-done="${id}" role="status">
+          <div class="flex items-start gap-3">
+            <span class="tick big">✓</span>
+            <div class="min-w-0 flex-1">
+              <div class="font-semibold">${esc(ack.message)}</div>
+              <div class="text-xs mt-0.5" style="color:var(--muted);">${esc(m ? m.name : "Machine")}</div>
+              <div class="mt-2.5 flex flex-wrap items-center gap-2">${statusBadge(t, enter)}<span class="text-xs" style="color:#3f7a68;">Now with ${esc(OWNER[t.status] || "next team")}</span></div>
+            </div>
+            <button type="button" data-dismiss-ack="${id}" class="text-xs font-semibold shrink-0" style="color:var(--muted);">Dismiss</button>
+          </div>
+        </div>`;
     }
 
     function renderTasks() {
       const list = tasksFor(state.me.role);
-      $("view-tasks").innerHTML = list.length === 0
+      const inQueue = new Set(list.map((t) => t.ticket_id));
+      const cards = list.map(taskCard);
+      Object.keys(state.acks)
+        .filter((id) => !inQueue.has(id))
+        .sort((a, b) => state.acks[a].index - state.acks[b].index)
+        .forEach((id) => cards.splice(Math.min(state.acks[id].index, cards.length), 0, doneCard(id, state.acks[id])));
+      $("view-tasks").innerHTML = cards.length === 0
         ? `<div class="card p-10 text-center"><div class="serif text-xl" style="color:var(--navy);">All clear</div><div class="text-sm mt-1" style="color:var(--muted);">Nothing is waiting on you.</div></div>`
-        : list.map((t) => `
-          <div class="card p-5 ${t.is_overdue ? "overdue" : ""}">
-            ${ticketHeader(t)}${ticketDetails(t)}
-            <div class="space-y-2.5 mt-4 pt-4" style="border-top:1px solid var(--line);">${taskActions(t)}</div>
-          </div>`).join("");
+        : cards.join("");
     }
 
     function renderBoard() {
@@ -653,7 +836,7 @@
                 ${e.note ? `<div class="mt-0.5">${esc(e.note)}</div>` : ""}</div>`).join("")}</div></div>`
             : "";
           return `<div class="card p-5 ${t.is_overdue ? "overdue" : ""}">
-            ${ticketHeader(t)}${ticketDetails(t)}
+            ${ticketHeader(t)}${progressHtml(t)}${ticketDetails(t)}
             <div class="flex items-center justify-between mt-3">
               <span class="text-xs" style="color:var(--muted);">Downtime ${formatDuration(t.downtime_hours)}</span>
               <button type="button" data-history="${t.ticket_id}" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">${open ? "Hide history" : "History"}</button>
@@ -695,6 +878,14 @@
     function fail(msg) { showToast(msg, true); }
 
     async function runTaskAction(action, id) {
+      if (state.busy[id]) return; // already saving this card: ignore repeat clicks
+      // Validation problems show inside the card as well as in the toast, right where the user is looking.
+      const fail = (msg) => {
+        state.cardErrors[id] = msg;
+        showToast(msg, true);
+        renderAll();
+      };
+      delete state.cardErrors[id];
       const put = (path, body) => () => apiRequest("PUT", `/api/tickets/${id}/${path}`, body);
       switch (action) {
         case "inspect_in_house":
@@ -724,7 +915,12 @@
           const note = field(id, "qreqnote");
           const pending = state.pendingUploads[`${id}:quotation_request`];
           if (!note && !pending) return fail("Enter remarks or choose a file.");
-          return act(async () => {
+          // Optimistic: the remark appears at once as "sending…" and the box clears; both are restored if it fails.
+          const draftKey = `${id}:qreqnote`;
+          const savedDraft = state.drafts[draftKey];
+          state.optimistic[id] = [[note, pending ? `[file: ${pending.name}]` : ""].filter(Boolean).join(" ")];
+          delete state.drafts[draftKey];
+          const ok = await act(async () => {
             let attachmentName = null;
             if (pending) {
               await postFile(id, "quotation_request", pending);
@@ -735,8 +931,11 @@
               note,
               attachment_name: attachmentName
             });
-            delete state.drafts[`${id}:qreqnote`];
-          }, "Sent.", id);
+            delete state.optimistic[id]; // the saved remark is now in the next refresh
+          }, "Remark recorded.", id);
+          delete state.optimistic[id];
+          if (!ok) { state.drafts[draftKey] = savedDraft ?? note; renderAll(); }
+          return;
         }
         case "quotation_request_continue":
           return act(() => apiRequest("PUT", `/api/tickets/${id}/quotation-request/continue`), "Next step.", id);
@@ -819,16 +1018,16 @@
     async function uploadFile(inputEl) {
       const [id, kind] = inputEl.getAttribute("data-upload").split(":");
       const file = inputEl.files[0];
-      if (!file) return;
-      showToast("Uploading…");
-      try {
-        await postFile(id, kind, file);
-        showToast("File attached.");
-        await refreshFromServer();
-      } catch (e) {
-        inputEl.value = "";
-        showToast(e instanceof ApiError ? e.message : "Upload failed. Check your connection and try again.", true);
-      }
+      if (!file || state.busy[id]) return;
+      state.lastClicked = "upload";
+      // The card locks and confirms the same way as any other action; the file then shows as attached.
+      await act(async () => {
+        try {
+          await postFile(id, kind, file);
+        } catch (e) {
+          throw e instanceof ApiError ? e : new ApiError("Upload failed. Check your connection and try again.", 0);
+        }
+      }, `${file.name} attached.`, id, true);
     }
 
     async function removeFile(fileId) {
@@ -945,8 +1144,24 @@
       $("form-create-breakdown").addEventListener("submit", async (e) => {
         e.preventDefault();
         const machine = getMachine(state.selectedMachineId);
-        if (!machine || machine.status !== "active") return;
-        await act(() => apiRequest("POST", "/api/tickets/create", { machine_id: machine.machine_id }), `Breakdown reported for ${machine.name}`);
+        if (!machine || machine.status !== "active" || state.busy.report) return;
+        state.busy.report = true; // disables the button and shows "Reporting…" so it cannot be sent twice
+        state.reportAck = null;
+        renderReport();
+        try {
+          await apiRequest("POST", "/api/tickets/create", { machine_id: machine.machine_id });
+          state.reportAck = { name: machine.name, machineId: machine.machine_id };
+          showToast(`Breakdown reported for ${machine.name}`);
+          delete state.busy.report;
+          await refreshFromServer();
+          clearTimeout(state.reportAckTimer);
+          state.reportAckTimer = setTimeout(() => { state.reportAck = null; if (state.activeView === "report") renderReport(); }, 10000);
+        } catch (err) {
+          showToast(err.message, true);
+          delete state.busy.report;
+          if (err.status !== 401) await refreshFromServer().catch(() => {});
+        }
+        renderReport();
       });
 
       // Keep typed text across re-renders.
@@ -955,8 +1170,18 @@
         if (key) state.drafts[key] = e.target.value;
       });
       $("view-tasks").addEventListener("click", (e) => {
+        const dismiss = e.target.closest("[data-dismiss-ack]");
+        if (dismiss) {
+          const id = dismiss.getAttribute("data-dismiss-ack");
+          delete state.acks[id];
+          renderAll();
+          return;
+        }
         const b = e.target.closest("[data-action]");
-        if (b) runTaskAction(b.getAttribute("data-action"), b.getAttribute("data-ticket"));
+        if (b && !b.disabled) {
+          state.lastClicked = b.getAttribute("data-action");
+          runTaskAction(state.lastClicked, b.getAttribute("data-ticket"));
+        }
       });
 
       $("board-show-closed").addEventListener("change", renderBoard);

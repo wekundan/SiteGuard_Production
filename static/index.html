@@ -269,10 +269,12 @@
       const v = [];
       if (r === "site_office" || r === "deo") v.push("report");
       if (taskStatusesForRole(r).length) v.push("tasks");
-      v.push("board");
-      if (r === "management" || r === "pm_incharge") v.push("dashboard");
+      // Board (all breakdowns + history) and Dashboard are for management and the P&M In-charge only;
+      // the server enforces the same rule and sends other roles only the tickets waiting on them.
+      if (canViewBoard(r)) v.push("board", "dashboard");
       return v;
     }
+    const canViewBoard = (role) => ["management", "pm_incharge"].includes(ROLE_ALIASES[role] || role);
 
     let state = {
       me: null, machines: [], tickets: [], metrics: null,
@@ -498,10 +500,11 @@
       }
       const index = state.lastIndex;
       try {
-        await action();
+        const result = await action();
         if (ticketId && !keepDrafts) Object.keys(state.drafts).filter((k) => k.startsWith(ticketId + ":")).forEach((k) => delete state.drafts[k]);
         showToast(successMessage);
-        if (ticketId) state.acks[ticketId] = { message: successMessage, index: Math.max(index, 0), played: false };
+        // Keep the ticket the server returned: roles that cannot see every ticket still need it to confirm where it went next.
+        if (ticketId) state.acks[ticketId] = { message: successMessage, index: Math.max(index, 0), played: false, ticket: result && result.ticket_id === ticketId ? result : null };
         delete state.busy[ticketId];
         await refreshFromServer();
         if (ticketId) {
@@ -628,10 +631,10 @@
       const ackEl = $("report-ack");
       const ack = state.reportAck;
       if (!ack) { ackEl.classList.add("hidden"); ackEl.innerHTML = ""; return; }
-      const t = state.tickets.find((x) => x.machine_id === ack.machineId && x.status === "pending_inspection");
+      const t = ack.ticket || state.tickets.find((x) => x.machine_id === ack.machineId && x.status === "pending_inspection");
       ackEl.classList.remove("hidden");
       ackEl.innerHTML = `<div class="ack" role="status" style="margin-bottom:1rem;"><span class="tick">✓</span>
-        <div>Breakdown reported for ${esc(ack.name)}<small>The mechanical team has been notified${t ? " · inspection " + (t.is_overdue ? "overdue" : "due in " + formatLive((new Date(t.sla_due_at) - nowMs()) / 3600000)) : ""}. Track it on the Board.</small></div></div>`;
+        <div>Breakdown reported for ${esc(ack.name)}<small>The mechanical team has been notified${t ? " · inspection " + (t.is_overdue ? "overdue" : "due in " + formatLive((new Date(t.sla_due_at) - nowMs()) / 3600000)) : ""}.${canViewBoard(state.me.role) ? " Track it on the Board." : ""}</small></div></div>`;
     }
 
     // ---- task cards -------------------------------------------------------
@@ -854,7 +857,7 @@
 
     // The ticket moved on to someone else, so it leaves my queue: show a confirmation in its place, then fade.
     function doneCard(id, ack) {
-      const t = state.tickets.find((x) => x.ticket_id === id);
+      const t = state.tickets.find((x) => x.ticket_id === id) || ack.ticket;
       if (!t) return "";
       const m = getMachine(t.machine_id);
       const enter = !ack.played;
@@ -1144,7 +1147,7 @@
           return act(async () => {
             for (const f of pending) await postFile(id, "quotation", f);
             delete state.pendingUploadLists[`${id}:quotation`];
-            await apiRequest("PUT", `/api/tickets/${id}/quotation`, { quote_details: remarks });
+            return apiRequest("PUT", `/api/tickets/${id}/quotation`, { quote_details: remarks });
           }, "Submitted.", id);
         }
         case "approve":
@@ -1344,8 +1347,8 @@
         state.reportAck = null;
         renderReport();
         try {
-          await apiRequest("POST", "/api/tickets/create", { machine_id: machine.machine_id });
-          state.reportAck = { name: machine.name, machineId: machine.machine_id };
+          const created = await apiRequest("POST", "/api/tickets/create", { machine_id: machine.machine_id });
+          state.reportAck = { name: machine.name, machineId: machine.machine_id, ticket: created };
           showToast(`Breakdown reported for ${machine.name}`);
           delete state.busy.report;
           await refreshFromServer();

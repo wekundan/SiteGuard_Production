@@ -25,6 +25,11 @@ Every status change is recorded in `ticket_events` (who, when, from, to, note); 
   Durations use the server's clock (`server_time` in `/api/bootstrap`), so a wrong phone clock cannot skew them; the app also refreshes when you return to it.
 - The login screen shows the UI build number, and `/api/bootstrap` returns `app_version`, so you can confirm a deploy picked up the latest UI.
 
+## Who can see what
+- **Board, History and Dashboard** (all breakdowns, the timeline, machine history): management and the P&M In-charge only. The server enforces this:
+  `GET /api/tickets/{id}/events` returns 403 for other roles, and `/api/bootstrap` sends other roles only the tickets waiting on them.
+- Everyone else sees Report (site office, DEO) and/or My tasks for their own queue.
+
 ## Quotation and bill attachments
 - **Quotation:** after outside repair is chosen, mech/PM log request remarks, then upload the vendor PDF/JPG/PNG when it arrives (upload moves the ticket to the vendor-quotation stage). Additional files can be attached before submitting to management (up to 5 per kind). Management sees files on the approval card.
 - **Dispatch (in-house requisition):** central store uploads the dispatch challan/PO PDF (or photo) while the ticket is **Awaiting central store**, then confirms dispatch. Wrong file? Use **Remove** next to the filename before confirming. Set `REQUIRE_DISPATCH_DOCS=0` to make the upload optional.

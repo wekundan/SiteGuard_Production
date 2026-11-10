@@ -65,6 +65,21 @@ with TestClient(main.app) as c:
     t1 = call("POST", "/api/tickets/create", deo, 201, "DEO reports breakdown", {"machine_id": M_IN})["ticket_id"]
     call("POST", "/api/tickets/create", site, 409, "duplicate active breakdown blocked", {"machine_id": M_IN})
     check(machine_status(M_IN) == "broken_down", "machine marked broken")
+
+    # --- Board and history are for management and the P&M In-charge only ----
+    for who, name in ((site, "Sr civil engineer"), (deo, "DEO"), (mech, "mechanical engineer"), (store, "site store"), (central, "central store")):
+        call("GET", f"/api/tickets/{t1}/events", who, 403, f"{name} cannot read ticket history")
+    call("GET", f"/api/tickets/{t1}/events", pm, 200, "P&M In-charge reads ticket history")
+    call("GET", f"/api/tickets/{t1}/events", mgmt, 200, "management reads ticket history")
+    all_ids = set(tickets())
+    check(set(tickets(pm)) == all_ids, "P&M In-charge receives every ticket")
+    check(tickets(site) == {}, "Sr civil engineer receives no ticket list")
+    mech_view = c.get("/api/bootstrap", headers=mech).json()
+    check(
+        {t["ticket_id"] for t in mech_view["tickets"]} == {t["ticket_id"] for t in mech_view["my_tasks"]}
+        and len(mech_view["tickets"]) < len(all_ids),
+        "mechanical engineer receives only the tickets waiting on them",
+    )
     check(tickets()[t1]["created_at"].endswith(("Z", "+00:00")), "timestamps carry a timezone")
 
     # --- SOP 2-6: in-house path with requisition ---------------------------
@@ -84,7 +99,7 @@ with TestClient(main.app) as c:
     call("PUT", f"/api/tickets/{t1}/dispatch", central, 200, "central store dispatches", {"dispatch_details": "Truck MH12-1234", "eta_date": "2030-01-01"})
     call("PUT", f"/api/tickets/{t1}/receive", central, 403, "central store cannot confirm receipt")
     call("PUT", f"/api/tickets/{t1}/receive", mech, 403, "mech cannot confirm receipt")
-    check(tickets(mech)[t1]["requisition_by"] == mech_boot["me"]["user_id"], "requisition tied to raiser")
+    check(tickets()[t1]["requisition_by"] == mech_boot["me"]["user_id"], "requisition tied to raiser")  # mech no longer sees t1: it left their queue
     in_transit = [x for x in c.get("/api/bootstrap", headers=store).json()["my_tasks"] if x["ticket_id"] == t1]
     check(len(in_transit) == 1, "in-transit ticket in site store my_tasks")
     call("PUT", f"/api/tickets/{t1}/receive", store, 200, "site store confirms receipt")

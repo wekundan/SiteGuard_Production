@@ -877,6 +877,13 @@ def ticket_in_my_queue(me: User, ticket: Ticket) -> bool:
     return ticket.status.value in task_statuses_for_role(me.role)
 
 
+BOARD_ROLES = (UserRole.MANAGEMENT, UserRole.PM_INCHARGE)
+
+
+def can_view_board(user: User) -> bool:
+    return effective_role(user.role) in BOARD_ROLES
+
+
 def migrate_legacy_user_roles() -> None:
     """Databases created from sql/seed.sql still label Vikram as supervisor, etc."""
     if not inspect(engine).has_table("users"):
@@ -952,6 +959,7 @@ def get_bootstrap_data(me: User = Depends(get_current_user), db: Session = Depen
     tickets = db.query(Ticket).options(selectinload(Ticket.files)).order_by(Ticket.created_at.desc()).all()
     ticket_payloads = [TicketResponse.model_validate(t).model_dump(mode="json") for t in tickets]
     queue = set(task_statuses_for_role(me.role))
+    my_tasks = [p for t, p in zip(tickets, ticket_payloads) if ticket_in_my_queue(me, t)]
     return {
         "me": user_payload(me),
         "users": [user_payload(u) for u in db.query(User).all()],
@@ -959,13 +967,11 @@ def get_bootstrap_data(me: User = Depends(get_current_user), db: Session = Depen
             {"machine_id": m.machine_id, "name": m.name, "location": m.location, "status": m.status.value}
             for m in machines
         ],
-        "tickets": ticket_payloads,
+        # Only management and the P&M In-charge may see every breakdown (Board, history, machine history).
+        # Everyone else receives just the tickets waiting on them.
+        "tickets": ticket_payloads if can_view_board(me) else my_tasks,
         "task_statuses": sorted(queue),
-        "my_tasks": [
-            TicketResponse.model_validate(t).model_dump(mode="json")
-            for t in tickets
-            if ticket_in_my_queue(me, t)
-        ],
+        "my_tasks": my_tasks,
         "stage_labels": STAGE_LABELS,
         "app_version": APP_UI_VERSION,
         "server_time": _now().isoformat(),  # lets the UI correct for a wrong device clock
@@ -1406,7 +1412,9 @@ def delete_file(file_id: str, user: User = Depends(get_current_user), db: Sessio
 
 
 @app.get("/api/tickets/{ticket_id}/events")
-def get_ticket_events(ticket_id: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list:
+def get_ticket_events(
+    ticket_id: str, _: User = Depends(require_roles(*BOARD_ROLES)), db: Session = Depends(get_db)
+) -> list:
     rows = (
         db.query(TicketEvent, User.name, User.role)
         .join(User, User.user_id == TicketEvent.actor_id)

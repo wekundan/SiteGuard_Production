@@ -110,6 +110,7 @@ class TicketStatus(str, Enum):
     PENDING_INSPECTION = "pending_inspection"
     PENDING_PARTS_CHECK = "pending_parts_check"  # in-house: mechanical team checks site store
     PENDING_DISPATCH = "pending_dispatch"  # requisition raised, central store to dispatch
+    PENDING_LOCAL_PURCHASE = "pending_local_purchase"  # central store asked the mechanical team to buy at site
     IN_TRANSIT = "in_transit"  # dispatched; site store confirms receipt
     QUOTATION_REQUESTED = "quotation_requested"  # outside: waiting for the vendor to send a quotation
     PENDING_QUOTATION = "pending_quotation"  # outside: quotation received, details to be submitted
@@ -131,13 +132,16 @@ ALLOWED_TRANSITIONS = {
     S.PENDING_INSPECTION: {S.PENDING_PARTS_CHECK, S.QUOTATION_REQUESTED},
     S.QUOTATION_REQUESTED: {S.PENDING_QUOTATION},  # engineer confirms request remarks + quotation file
     S.PENDING_PARTS_CHECK: {S.REPAIR_IN_PROGRESS, S.PENDING_DISPATCH},
-    S.PENDING_DISPATCH: {S.IN_TRANSIT},
+    S.PENDING_DISPATCH: {S.IN_TRANSIT, S.PENDING_LOCAL_PURCHASE},  # supply it, or ask site to buy locally
+    S.PENDING_LOCAL_PURCHASE: {S.IN_TRANSIT},  # mechanical team confirms the local order
     S.IN_TRANSIT: {S.REPAIR_IN_PROGRESS},
     S.PENDING_QUOTATION: {S.PENDING_APPROVAL},
     S.PENDING_APPROVAL: {S.PENDING_VENDOR_DISPATCH, S.PENDING_QUOTATION},  # approve / reject
     S.PENDING_VENDOR_DISPATCH: {S.VENDOR_REPAIR_IN_PROGRESS},
     S.VENDOR_REPAIR_IN_PROGRESS: {S.CLEARED},
-    S.REPAIR_IN_PROGRESS: {S.CLEARED},
+    # CLEARED = installed and ready; PENDING_DISPATCH / IN_TRANSIT = wrong or defective parts reported
+    # (back to central store, or exchange at site, depending on where the parts came from).
+    S.REPAIR_IN_PROGRESS: {S.CLEARED, S.PENDING_DISPATCH, S.IN_TRANSIT},
     S.CLEARED: {S.CLOSED},
     S.CLOSED: set(),
 }
@@ -153,6 +157,7 @@ _SLA_DEFAULTS = {
     S.PENDING_INSPECTION: 2,
     S.PENDING_PARTS_CHECK: 4,
     S.PENDING_DISPATCH: 24,
+    S.PENDING_LOCAL_PURCHASE: 24,
     S.IN_TRANSIT: 48,
     S.QUOTATION_REQUESTED: 48,
     S.PENDING_QUOTATION: 24,
@@ -292,6 +297,8 @@ class Ticket(Base):
         String(36), ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True, index=True
     )
     dispatch_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    parts_source: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # "central" | "local"
+    parts_issue_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # wrong/defective parts, until resolved
     # outside path
     vendor_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     quote_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -529,6 +536,10 @@ def add_missing_columns() -> None:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN vehicle_received_note TEXT"))
         if "requisition_by" not in cols:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN requisition_by VARCHAR(36)"))
+        if "parts_source" not in cols:
+            conn.execute(text("ALTER TABLE tickets ADD COLUMN parts_source VARCHAR(10)"))
+        if "parts_issue_note" not in cols:
+            conn.execute(text("ALTER TABLE tickets ADD COLUMN parts_issue_note TEXT"))
 
 
 def _requisition_raiser_from_events(db: Session, ticket_id: str) -> Optional[str]:
@@ -665,6 +676,28 @@ class DispatchRequest(BaseModel):
     eta_date: date
 
 
+class LocalPurchaseRequest(BaseModel):
+    """Central store asks the mechanical team to purchase the parts at site."""
+
+    note: str = Field(..., min_length=3, max_length=500)
+
+
+class LocalPurchaseOrdered(BaseModel):
+    """Mechanical team confirms the parts were ordered locally."""
+
+    note: str = Field(..., min_length=3, max_length=1000)
+    eta_date: date
+
+
+class WrongPartsRequest(BaseModel):
+    note: str = Field(..., min_length=3, max_length=1000)
+    eta_date: Optional[date] = None  # expected arrival of the exchange, when buying locally
+
+
+class ReceiveRequest(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=200)  # store entry / GRN number
+
+
 class QuotationRequestMessage(BaseModel):
     note: str = Field(default="", max_length=1000)
     attachment_name: Optional[str] = Field(default=None, max_length=150)
@@ -728,6 +761,8 @@ class TicketResponse(BaseModel):
     parts_required: Optional[str] = None
     requisition_by: Optional[str] = None
     dispatch_details: Optional[str] = None
+    parts_source: Optional[str] = None
+    parts_issue_note: Optional[str] = None
     vendor_name: Optional[str] = None
     quote_amount: Optional[float] = None
     quote_details: Optional[str] = None
@@ -826,6 +861,7 @@ MECH = (UserRole.MECH_ENGINEER, UserRole.PM_INCHARGE)
 _MECH_TASK_STATUSES = (
     S.PENDING_INSPECTION,
     S.PENDING_PARTS_CHECK,
+    S.PENDING_LOCAL_PURCHASE,
     S.QUOTATION_REQUESTED,
     S.PENDING_QUOTATION,
     S.PENDING_VENDOR_DISPATCH,
@@ -847,6 +883,7 @@ STAGE_LABELS: dict[str, str] = {
     "pending_inspection": "Needs inspection",
     "pending_parts_check": "Site store check",
     "pending_dispatch": "Awaiting central store",
+    "pending_local_purchase": "Purchase parts locally",
     "in_transit": "Spares in transit",
     "quotation_requested": "Quotation pending / requested",
     "pending_quotation": "Vendor quotation",
@@ -1054,6 +1091,8 @@ def dispatch_spares(
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
+    if ticket.status != S.PENDING_DISPATCH:
+        raise HTTPException(status_code=409, detail="This ticket is not waiting on the central store.")
     if (
         REQUIRE_DISPATCH_DOCS
         and ticket.status == S.PENDING_DISPATCH
@@ -1067,6 +1106,44 @@ def dispatch_spares(
     details = payload.dispatch_details.strip()
     move_ticket(db, ticket, S.IN_TRANSIT, actor, note=details)
     ticket.dispatch_details = details
+    ticket.parts_source = "central"
+    ticket.eta_date = payload.eta_date
+    return finish(db, ticket)
+
+
+# SOP 5b: central store cannot supply the parts and asks the mechanical team to purchase them at site
+@app.put("/api/tickets/{ticket_id}/request-local-purchase", response_model=TicketResponse)
+def request_local_purchase(
+    ticket_id: str,
+    payload: LocalPurchaseRequest,
+    actor: User = Depends(require_roles(UserRole.CENTRAL_STORE)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    if ticket.status != S.PENDING_DISPATCH:
+        raise HTTPException(status_code=409, detail="This ticket is not waiting on the central store.")
+    note = payload.note.strip()
+    move_ticket(db, ticket, S.PENDING_LOCAL_PURCHASE, actor, note=f"Purchase locally: {note}")
+    ticket.dispatch_details = f"Central store asks site to purchase locally: {note}"  # shown to the mechanical team
+    ticket.parts_source = "local"
+    return finish(db, ticket)
+
+
+# Mechanical team orders the parts at site and tells the site store what to expect
+@app.put("/api/tickets/{ticket_id}/local-purchase", response_model=TicketResponse)
+def confirm_local_purchase(
+    ticket_id: str,
+    payload: LocalPurchaseOrdered,
+    actor: User = Depends(require_roles(*MECH)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    if ticket.status != S.PENDING_LOCAL_PURCHASE:
+        raise HTTPException(status_code=409, detail="The central store has not asked for a local purchase on this ticket.")
+    note = payload.note.strip()
+    move_ticket(db, ticket, S.IN_TRANSIT, actor, note=f"Ordered locally: {note}")
+    ticket.dispatch_details = f"Ordered locally: {note}"
+    ticket.parts_source = "local"
     ticket.eta_date = payload.eta_date
     return finish(db, ticket)
 
@@ -1075,14 +1152,39 @@ def dispatch_spares(
 @app.put("/api/tickets/{ticket_id}/receive", response_model=TicketResponse)
 def receive_spares(
     ticket_id: str,
+    payload: Optional[ReceiveRequest] = None,
     actor: User = Depends(require_roles(UserRole.SITE_STORE)),
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
     if ticket.status != S.IN_TRANSIT:
         raise HTTPException(status_code=409, detail="This ticket is not awaiting spare receipt.")
-    move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note="Spares received at site")
+    entry = ((payload.note if payload else None) or "").strip()
+    move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note=f"Spares received at site: {entry}" if entry else "Spares received at site")
     ticket.eta_date = None
+    ticket.parts_issue_note = None  # whatever was wrong has now been replaced
+    return finish(db, ticket)
+
+
+# Mechanical team found the received parts wrong or defective.
+# Parts from central store go back to it; locally bought parts are exchanged, so site store receives again.
+@app.put("/api/tickets/{ticket_id}/wrong-parts", response_model=TicketResponse)
+def report_wrong_parts(
+    ticket_id: str,
+    payload: WrongPartsRequest,
+    actor: User = Depends(require_roles(*MECH)),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    ticket = get_ticket(db, ticket_id)
+    if ticket.status != S.REPAIR_IN_PROGRESS:
+        raise HTTPException(status_code=409, detail="Wrong parts can only be reported while the repair is in progress.")
+    if ticket.parts_source not in ("central", "local"):
+        raise HTTPException(status_code=409, detail="This repair used parts from the site store, not a requisition.")
+    note = payload.note.strip()
+    target = S.PENDING_DISPATCH if ticket.parts_source == "central" else S.IN_TRANSIT
+    move_ticket(db, ticket, target, actor, note=f"Wrong parts: {note}")
+    ticket.parts_issue_note = note
+    ticket.eta_date = payload.eta_date if target == S.IN_TRANSIT else None
     return finish(db, ticket)
 
 

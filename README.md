@@ -25,6 +25,18 @@ Every status change is recorded in `ticket_events` (who, when, from, to, note); 
   Durations use the server's clock (`server_time` in `/api/bootstrap`), so a wrong phone clock cannot skew them; the app also refreshes when you return to it.
 - The login screen shows the UI build number, and `/api/bootstrap` returns `app_version`, so you can confirm a deploy picked up the latest UI.
 
+## Parts requisition: supply, local purchase, wrong parts
+When the site store has no parts, the mechanical team raises a requisition and the **central store** answers in one of two ways:
+1. **Supply from central store:** remarks that the parts were dispatched, or ordered and will reach site by a date, then submit (the dispatch challan upload still applies; set `REQUIRE_DISPATCH_DOCS=0` to make it optional).
+   -> **Site store** confirms receipt (optional store entry / GRN number) -> **mechanical team** installs and marks the machine ready.
+2. **Ask site to purchase locally:** a remark goes back to the **mechanical team** ("Purchase parts locally"), who record what was ordered and the arrival date
+   -> **Site store** receives and makes the entry -> **mechanical team** installs and marks the machine ready.
+
+**Wrong or defective parts** (reported by the mechanical team while the repair is in progress, with a remark):
+- Parts that came from the central store go **back to the central store**, who add a remark that the correct item was dispatched/ordered -> site store receives -> mechanical team clears the breakdown.
+- Locally bought parts go to the **site store** to receive the exchange -> mechanical team clears the breakdown.
+Both loops can repeat, and every step is in the Board history. Repairs that used parts already in the site store have no requisition, so there is nothing to send back.
+
 ## Who can see what
 - **Board, History and Dashboard** (all breakdowns, the timeline, machine history): management and the P&M In-charge only. The server enforces this:
   `GET /api/tickets/{id}/events` returns 403 for other roles, and `/api/bootstrap` sends other roles only the tickets waiting on them.

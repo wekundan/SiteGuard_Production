@@ -116,6 +116,63 @@ with TestClient(main.app) as c:
     check(ev ==["pending_inspection", "pending_parts_check", "pending_dispatch", "in_transit", "repair_in_progress", "cleared", "closed"], "event log follows SOP")
     check(tickets()[t1]["repair_cost"] == 1200.5 and tickets()[t1]["downtime_hours"] >= 0, "closure record stored")
 
+    # --- Parts: central store supplies or asks site to buy; wrong parts loop back -----------
+    M_ROLLER = "10000000-0000-4000-8000-000000000006"
+
+    def requisition(machine, label):
+        tid = call("POST", "/api/tickets/create", site, 201, f"{label}: report", {"machine_id": machine})["ticket_id"]
+        call("PUT", f"/api/tickets/{tid}/inspect", mech, 200, f"{label}: inspect", inspect)
+        call("PUT", f"/api/tickets/{tid}/parts-check", mech, 200, f"{label}: requisition", {"available": False, "parts_required": "Pump seal kit"})
+        return tid
+
+    def stages(tid):
+        return [e["to_status"] for e in c.get(f"/api/tickets/{tid}/events", headers=mgmt).json()]
+
+    # A: central store asks the site to purchase; a wrong part is exchanged through the site store
+    a = requisition(M_IN, "local purchase")
+    call("PUT", f"/api/tickets/{a}/wrong-parts", mech, 409, "wrong parts only once repair has started", {"note": "wrong size"})
+    call("PUT", f"/api/tickets/{a}/local-purchase", mech, 409, "cannot order locally before central store asks", {"note": "ordered", "eta_date": "2030-01-01"})
+    call("PUT", f"/api/tickets/{a}/request-local-purchase", mech, 403, "mech cannot ask for a local purchase", {"note": "buy at site"})
+    call("PUT", f"/api/tickets/{a}/request-local-purchase", central, 422, "local purchase request needs a remark", {"note": ""})
+    call("PUT", f"/api/tickets/{a}/request-local-purchase", central, 200, "central store asks site to purchase", {"note": "Not in central stock, buy at site"})
+    check(tickets()[a]["status"] == "pending_local_purchase" and tickets()[a]["parts_source"] == "local", "ticket goes back to the mechanical team")
+    check(any(x["ticket_id"] == a for x in c.get("/api/bootstrap", headers=mech).json()["my_tasks"]), "local purchase sits in the mechanical queue")
+    check(not any(x["ticket_id"] == a for x in c.get("/api/bootstrap", headers=central).json()["my_tasks"]), "and has left the central store queue")
+    call("PUT", f"/api/tickets/{a}/dispatch", central, 409, "central store cannot dispatch after handing over", {"dispatch_details": "Dispatched anyway", "eta_date": "2030-01-01"})
+    call("PUT", f"/api/tickets/{a}/local-purchase", central, 403, "central store cannot confirm the local order", {"note": "ordered", "eta_date": "2030-01-01"})
+    call("PUT", f"/api/tickets/{a}/local-purchase", mech, 200, "mech confirms parts ordered locally", {"note": "Ordered from Patel Hydraulics", "eta_date": "2030-01-01"})
+    check(tickets()[a]["status"] == "in_transit" and tickets()[a]["dispatch_details"].startswith("Ordered locally"), "site store now expects the local parts")
+    call("PUT", f"/api/tickets/{a}/receive", store, 200, "site store receives and makes the entry", {"note": "Entry GRN-501"})
+    call("PUT", f"/api/tickets/{a}/wrong-parts", site, 403, "site office cannot report wrong parts", {"note": "wrong size"})
+    call("PUT", f"/api/tickets/{a}/wrong-parts", mech, 422, "wrong parts needs a proper remark", {"note": "no"})
+    call("PUT", f"/api/tickets/{a}/wrong-parts", mech, 200, "mech reports wrong part, exchange asked", {"note": "Seal kit is for another model, exchange requested", "eta_date": "2030-01-02"})
+    check(tickets()[a]["status"] == "in_transit" and tickets()[a]["parts_issue_note"], "local exchange goes back to site store")
+    call("PUT", f"/api/tickets/{a}/receive", store, 200, "site store receives the exchanged part")
+    check(tickets()[a]["status"] == "repair_in_progress" and tickets()[a]["parts_issue_note"] is None, "issue note cleared once replaced")
+    call("PUT", f"/api/tickets/{a}/clear", mech, 200, "mech installs and clears")
+    check(stages(a) == ["pending_inspection", "pending_parts_check", "pending_dispatch", "pending_local_purchase", "in_transit",
+                        "repair_in_progress", "in_transit", "repair_in_progress", "cleared"], "event log shows the local purchase and exchange")
+
+    # B: central store supplies; wrong part goes back to central store, then corrected
+    b = requisition(M_ROLLER, "central supply")
+    upload(b, central, "dispatch", PDF, 201, "central supply: dispatch challan")
+    call("PUT", f"/api/tickets/{b}/dispatch", central, 200, "central supply: dispatched", {"dispatch_details": "Dispatched from central store", "eta_date": "2030-01-01"})
+    check(tickets()[b]["parts_source"] == "central", "parts source recorded as central")
+    call("PUT", f"/api/tickets/{b}/receive", store, 200, "central supply: site store receives")
+    call("PUT", f"/api/tickets/{b}/wrong-parts", mech, 200, "mech reports wrong parts, sent back", {"note": "Wrong bearing received, sent back to central store"})
+    check(tickets()[b]["status"] == "pending_dispatch" and tickets()[b]["parts_issue_note"], "wrong parts return to central store")
+    call("PUT", f"/api/tickets/{b}/dispatch", central, 200, "central store sends the correct item", {"dispatch_details": "Correct bearing dispatched", "eta_date": "2030-02-01"})
+    call("PUT", f"/api/tickets/{b}/receive", store, 200, "site store receives the correct item")
+    call("PUT", f"/api/tickets/{b}/clear", mech, 200, "mech installs and clears")
+    check(stages(b).count("pending_dispatch") == 2 and stages(b)[-1] == "cleared", "event log shows the return to central store")
+
+    # C: parts taken from the site store never had a requisition, so there is nothing to send back
+    cc = call("POST", "/api/tickets/create", site, 201, "site-store repair: report", {"machine_id": M_IN})["ticket_id"]
+    call("PUT", f"/api/tickets/{cc}/inspect", mech, 200, "site-store repair: inspect", inspect)
+    call("PUT", f"/api/tickets/{cc}/parts-check", mech, 200, "site-store repair: parts in stock", {"available": True})
+    call("PUT", f"/api/tickets/{cc}/wrong-parts", mech, 409, "no wrong-parts loop without a requisition", {"note": "wrong size part"})
+    call("PUT", f"/api/tickets/{cc}/clear", mech, 200, "site-store repair: cleared")
+
     # --- SOP 7: outside path with quotation approval -----------------------
     t2 = call("POST", "/api/tickets/create", site, 201, "report second machine", {"machine_id": M_OUT})["ticket_id"]
     call("PUT", f"/api/tickets/{t2}/inspect", pm, 200, "P&M in-charge inspects (outside)", {"issue_description": "Engine overhaul", "repair_venue": "outside"})

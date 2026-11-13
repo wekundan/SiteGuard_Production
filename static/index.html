@@ -53,7 +53,8 @@
     .tl::before { content: ""; position: absolute; left: 7px; top: 10px; bottom: 10px; width: 2px; background: var(--line); border-radius: 2px; }
     .tl-item { position: relative; padding-bottom: .8rem; --tone: #c9973f; --tone-bg: #fdf3dc; --tone-ink: #8a5a00; }
     .tl-item:last-child { padding-bottom: 0; }
-    .tl-item::before { content: ""; position: absolute; left: -1.5rem; top: .85rem; width: 16px; height: 16px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 0 4px #fff; }
+    .tl-dot { position: absolute; left: -1.5rem; top: .7rem; width: 16px; height: 16px; border-radius: 50%; background: var(--tone); color: #fff;
+      font-size: 10px; font-weight: 800; line-height: 16px; text-align: center; box-shadow: 0 0 0 4px #fff; }
     .tl-item.tone-green { --tone: #0f766e; --tone-bg: #e2f4ec; --tone-ink: #0b5a46; }
     .tl-item.tone-amber { --tone: #c9973f; --tone-bg: #fdf3dc; --tone-ink: #8a5a00; }
     .tl-item.tone-red { --tone: #be123c; --tone-bg: #fde7eb; --tone-ink: #9f1239; }
@@ -63,7 +64,23 @@
     .tl-title { font-weight: 700; font-size: .85rem; color: var(--ink); line-height: 1.3; }
     .tl-time { font-size: .7rem; color: var(--muted); white-space: nowrap; padding-top: .1rem; }
     .tl-by { font-size: .74rem; color: var(--muted); margin-top: .15rem; }
-    .tl-move { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; font-size: .7rem; color: var(--muted); font-weight: 600; }
+    .tl-chip { display: inline-flex; align-items: center; gap: .3rem; margin-top: .45rem; padding: .1rem .55rem; border-radius: 999px; background: #f4f2ed; border: 1px solid var(--line); font-size: .7rem; font-weight: 600; color: var(--muted); }
+    .tl-facts { margin-top: .4rem; font-size: .74rem; color: var(--muted); }
+    .tl-facts strong { color: var(--ink); font-weight: 600; }
+    .tl-phase { display: flex; align-items: center; gap: .4rem; width: 100%; margin: .9rem 0 .5rem; padding: 0; background: none; border: 0; cursor: pointer; text-align: left;
+      font-size: .66rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+    .tl-phase:first-child { margin-top: 0; }
+    .tl-phase .caret { display: inline-block; width: .8rem; transition: transform .15s; }
+    .tl-phase.closed .caret { transform: rotate(-90deg); }
+    .tl-gap { margin: -.35rem 0 .55rem .2rem; font-size: .72rem; color: var(--muted); }
+    .clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .tl-more { margin-top: .2rem; padding: 0; background: none; border: 0; font-size: .72rem; font-weight: 600; color: var(--navy); text-decoration: underline; cursor: pointer; }
+    .now-card { border: 1px solid var(--line); background: #faf9f6; border-radius: 12px; padding: .75rem .9rem; margin-bottom: .9rem; }
+    .now-card .headline { font-weight: 600; font-size: .9rem; margin-top: .15rem; line-height: 1.35; }
+    .now-card .meta { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; margin-top: .45rem; font-size: .74rem; color: var(--muted); }
+    .hist-tools { display: flex; justify-content: flex-end; margin: -.3rem 0 .6rem; }
+    .hist-tools button { padding: .2rem .65rem; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-size: .7rem; font-weight: 600; color: var(--muted); cursor: pointer; }
+    .hist-tools button.on { background: #fde7eb; border-color: #f1b8c4; color: #9f1239; }
     .tl-note { margin-top: .55rem; padding: .5rem .65rem; border-radius: 8px; background: var(--tone-bg); border-left: 3px solid var(--tone); }
     .tl-note-label { font-size: .64rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--tone-ink); }
     .tl-note blockquote { margin: .15rem 0 0; font-size: .82rem; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
@@ -280,6 +297,7 @@
     let state = {
       me: null, machines: [], tickets: [], metrics: null,
       activeView: "report", drafts: {}, openHistory: {}, history: {},
+      issuesOnly: {}, collapsed: {}, expandedNotes: {},   // history view: filters, collapsed phases, expanded long notes
       selectedMachineId: "", lastServerSignature: "", lastRenderAt: 0,
       taskStatuses: null,
       myTasks: null,
@@ -566,7 +584,7 @@
       state.lastServerSignature = "";
       // Nothing from the previous user (confirmations, half-typed text, selected files) may show for the next one.
       Object.assign(state, { acks: {}, cardErrors: {}, optimistic: {}, busy: {}, drafts: {}, pendingUploads: {}, pendingUploadLists: {},
-        openHistory: {}, history: {}, openMachine: {}, reportAck: null, tickets: [], metrics: null });
+        openHistory: {}, history: {}, issuesOnly: {}, collapsed: {}, expandedNotes: {}, openMachine: {}, reportAck: null, tickets: [], metrics: null });
       $("login-view").classList.remove("hidden");
       ["main-wrapper", "main-nav", "user-bar"].forEach((id) => $(id).classList.add("hidden"));
     }
@@ -927,87 +945,138 @@
       site_store: "Site Store", central_store: "Central Store", management: "Management",
       supervisor: "Mechanical Engineer", head_office: "Central Store" // legacy role names
     };
-    // Notes the server writes that only repeat what the title already says.
-    const GENERIC_NOTES = new Set([
-      "Spares available in site store", "Spares received at site", "Breakdown cleared", "Quotation request logged", "Quotation approved"
-    ]);
     const stageLabel = (s) => (STATUS[s] || { label: s }).label;
+    const PHASES = { report: "Reported", inspection: "Inspection", parts: "Parts", quotation: "Quotation", repair: "Repair", close: "Closing", other: "Other" };
+    const TONE = { success: "green", pending: "amber", problem: "red" };
+    const TONE_GLYPH = { success: "✓", pending: "•", problem: "!" };
 
-    // tone: green = completed/positive, amber = waiting/in progress, red = rejection.
-    function describeEvent(e) {
-      const from = e.from_status, to = e.to_status;
-      const raw = (e.note || "").trim();
-      const after = (re) => raw.replace(re, "").trim();
-      const out = (title, tone, label = "", text = "", extra = {}) =>
-        ({ title, tone, label, text: GENERIC_NOTES.has(text) ? "" : text, ...extra });
-      if (!from) return out("Breakdown Reported", "amber");
-      switch (`${from}>${to}`) {
-        case "pending_inspection>pending_parts_check":
-          return out("Sent to In-house Workshop", "amber", "Inspection findings", after(/^in_house:\s*/));
-        case "pending_inspection>quotation_requested":
-          return out("Outside Workshop Selected", "amber", "Inspection findings", after(/^outside:\s*/));
-        case "quotation_requested>quotation_requested":
-          return out("Remark Added to Quotation Request", "amber", "Remark", raw, { same: true });
-        case "quotation_requested>pending_quotation":
-          return out("Quotation Requested", "amber", "Details", raw);
-        case "pending_quotation>pending_approval":
-          return out("Quotation Submitted for Approval", "amber", "Remarks", raw);
-        case "pending_approval>pending_vendor_dispatch":
-          return out("Quotation Approved", "green", "Management Note", raw);
-        case "pending_approval>pending_quotation":
-          return out("Quotation Rejected", "red", "Rejection Reason", after(/^Rejected:\s*/), { rejected: true });
-        case "pending_vendor_dispatch>vendor_repair_in_progress":
-          return out("Machine Sent to Vendor", "green", "Dispatch details", after(/^Sent to vendor:\s*/));
-        case "pending_vendor_dispatch>pending_vendor_dispatch":
-          return out("Machine Not Yet Sent to Vendor", "amber", "Remarks", after(/^Not sent yet:\s*/), { same: true });
-        case "vendor_repair_in_progress>cleared":
-          return out("Vehicle Received, Breakdown Cleared", "green", "Receipt remarks", after(/^Received at site:\s*/));
-        case "pending_parts_check>repair_in_progress":
-          return out("Spares Available, Repair Started", "green", "Site store", raw);
-        case "pending_parts_check>pending_dispatch":
-          return out("Requisition Raised", "amber", "Parts required", after(/^Requisition:\s*/));
-        case "pending_dispatch>in_transit":
-          return out("Parts Dispatched / Ordered by Central Store", "green", "Central store remarks", raw);
-        case "pending_dispatch>pending_local_purchase":
-          return out("Asked to Purchase Locally", "amber", "Central store remark", after(/^Purchase locally:\s*/));
-        case "pending_local_purchase>in_transit":
-          return out("Parts Ordered Locally", "amber", "Order details", after(/^Ordered locally:\s*/));
-        case "in_transit>repair_in_progress":
-          return out("Parts Received at Site", "green", "Store entry", after(/^Spares received at site:\s*/));
-        case "repair_in_progress>pending_dispatch":
-          return out("Wrong Parts Reported, Returned to Central Store", "red", "What was wrong", after(/^Wrong parts:\s*/), { rejected: true });
-        case "repair_in_progress>in_transit":
-          return out("Wrong Parts Reported, Exchange Requested", "red", "What was wrong", after(/^Wrong parts:\s*/));
-        case "repair_in_progress>cleared":
-          return out("Parts Installed, Breakdown Cleared", "green", "Note", raw);
-        case "cleared>closed":
-          return out("Report Closed", "green", "Root cause", after(/^Root cause:\s*/));
-        default:
-          return out(`Status Changed to ${stageLabel(to)}`, "amber", "Note", raw, { same: from === to });
-      }
+    // The server stores facts (type, phase, tone, payload, the user's own note). All wording lives here:
+    // titles are past tense, "<Thing> <verb>", with "— outcome" when the result matters. A new stage only
+    // needs one line below; unknown types fall back to "Status Changed to …".
+    const EVENT_COPY = {
+      "breakdown.reported": { title: "Breakdown Reported" },
+      "inspection.completed_in_house": { title: "Inspection Completed — Repair In-house", label: "Findings" },
+      "inspection.completed_outside": { title: "Inspection Completed — Repair at Vendor", label: "Findings" },
+      "quotation.remark_added": { title: "Remark Added to Quotation Request", label: "Remark" },
+      "quotation.requested": { title: "Quotation Requested from Vendor" },
+      "quotation.submitted": { title: "Quotation Submitted for Approval", label: "Remarks" },
+      "quotation.approved": { title: "Quotation Approved", label: "Management note" },
+      "quotation.rejected": { title: "Quotation Rejected — Revision Needed", label: "Rejection reason" },
+      "vendor.not_sent": { title: "Machine Not Yet Sent to Vendor", label: "Remarks" },
+      "vendor.machine_sent": { title: "Machine Sent to Vendor", label: "Dispatch details" },
+      "vendor.machine_received": { title: "Machine Received — Breakdown Cleared", label: "Receipt remarks" },
+      "parts.available": { title: "Spares Available — Repair Started" },
+      "parts.requested": { title: "Parts Requested — Not in Site Store", label: "Parts needed" },
+      "parts.dispatched": { title: "Parts Dispatched by Central Store", label: "Remarks" },
+      "parts.local_purchase_requested": { title: "Central Store Asked for Local Purchase", label: "Remark" },
+      "parts.ordered_locally": { title: "Parts Ordered Locally", label: "Order details" },
+      "parts.received": { title: "Parts Received at Site", label: "Store entry" },
+      "parts.wrong_returned": { title: "Wrong Parts Found — Sent Back", label: "What was wrong" },
+      "parts.wrong_exchange": { title: "Wrong Parts Found — Exchange Requested", label: "What was wrong" },
+      "repair.cleared": { title: "Parts Installed — Breakdown Cleared", label: "Note" },
+      "record.closed": { title: "Report Closed — Root Cause Logged", label: "Root cause" }
+    };
+    const dateShort = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+
+    function eventView(e) {
+      const copy = EVENT_COPY[e.type] || { title: `Status Changed to ${stageLabel(e.to_status)}`, label: "Note" };
+      const p = e.payload || {};
+      const facts = [];
+      if (p.eta_date) facts.push(`Reaches site by <strong>${dateShort(p.eta_date)}</strong>`);
+      if (p.attachment) facts.push(`Attached <strong>${esc(p.attachment)}</strong>`);
+      if (p.repair_cost != null) facts.push(`Repair cost <strong>${inr(p.repair_cost)}</strong>`);
+      const tone = TONE[e.tone] || "amber";
+      // A hand-over chip appears only when the ticket changes hands, never as "Moved to <column>".
+      const owner = OWNER[e.to_status];
+      const handed = e.to_status !== "closed" && owner && (!e.from_status || OWNER[e.from_status] !== owner) ? owner : "";
+      return { title: copy.title, label: copy.label || "Note", tone, glyph: TONE_GLYPH[e.tone] || "•", facts, handed };
     }
 
-    function historyHtml(events) {
+    const NOW_TEXT = {
+      pending_inspection: "Waiting for the mechanical team to inspect the machine",
+      pending_parts_check: "Mechanical team is checking the site store for spares",
+      pending_dispatch: (t) => t.parts_issue_note ? "Waiting for the central store to send the correct parts" : "Waiting for the central store to supply the parts or ask site to buy them",
+      pending_local_purchase: "Waiting for the mechanical team to order the parts locally",
+      in_transit: "Parts are on the way. Site store to confirm receipt",
+      quotation_requested: "Waiting for the vendor's quotation",
+      pending_quotation: "Quotation received. Mechanical team to submit it for approval",
+      pending_approval: "Waiting for management to approve the quotation",
+      pending_vendor_dispatch: "Quotation approved. Mechanical team to send the machine to the vendor",
+      vendor_repair_in_progress: "Machine is at the vendor workshop for repair",
+      repair_in_progress: "Repair in progress at site",
+      cleared: "Breakdown cleared. Closure record pending",
+      closed: "Report closed"
+    };
+
+    // "Now" summary pinned above the log: what is happening, who has it, how long, and how many problems so far.
+    function nowCardHtml(t, events) {
+      const text = NOW_TEXT[t.status];
+      const headline = typeof text === "function" ? text(t) : text || stageLabel(t.status);
+      const issues = (events || []).filter((e) => e.tone === "problem").length;
+      const open = t.status !== "closed";
+      return `<div class="now-card">
+        <div class="label">Now</div>
+        <div class="headline">${esc(headline)}</div>
+        <div class="meta">
+          ${open ? `<span>With <strong style="color:var(--ink);">${esc(OWNER[t.status] || "next team")}</strong></span>
+            <span>${liveAge(t.stage_entered_at)} in this step</span>${slaBadge(t)}` : `<span>Total downtime ${liveDowntime(t)}</span>`}
+          ${issues ? `<span style="color:#9f1239;font-weight:600;">${issues} issue${issues === 1 ? "" : "s"} so far</span>` : ""}
+        </div>
+      </div>`;
+    }
+
+    // Newest first; entries grouped into collapsible phases; time spent between steps shown on the rail.
+    function historyView(t, events) {
       if (!events) return `<div class="text-xs" style="color:var(--muted);">Loading history…</div>`;
       if (!events.length) return `<div class="text-xs" style="color:var(--muted);">No history yet.</div>`;
-      // Newest first, so the current situation is the first thing you read.
-      const items = events.map((e) => ({ e, d: describeEvent(e) })).reverse();
-      return `<div class="tl">${items.map(({ e, d }, i) => {
-        const who = String(e.actor || "").replace(/\s*\([^)]*\)\s*$/, "");
-        const role = ROLE_LABEL[e.actor_role] || "";
-        const moveLabel = d.rejected ? "Returned to" : d.same ? "Still at" : "Moved to";
-        return `<div class="tl-item tone-${d.tone}">
-          <div class="tl-card">
-            <div class="tl-head">
-              <div class="tl-title">${esc(d.title)}${i === 0 ? '<span class="tl-latest">Latest</span>' : ""}</div>
-              <div class="tl-time">${formatDateTime(e.created_at)}</div>
+      const id = t.ticket_id;
+      const issuesOnly = !!state.issuesOnly[id];
+      const hasIssues = events.some((e) => e.tone === "problem");
+      const rows = events
+        .map((e, i) => ({ e, v: eventView(e), prev: events[i - 1] }))
+        .reverse()
+        .filter((r) => !issuesOnly || r.e.tone === "problem");
+
+      const groups = [];
+      rows.forEach((r) => {
+        const phase = r.e.phase || "other";
+        const last = groups[groups.length - 1];
+        if (last && last.phase === phase) last.rows.push(r);
+        else groups.push({ phase, rows: [r] });
+      });
+
+      const body = groups.map((g) => {
+        const key = `${id}:${g.rows[0].e.event_id}`;
+        const closed = !!state.collapsed[key];
+        const cards = closed ? "" : g.rows.map((r) => {
+          const { e, v, prev } = r;
+          const who = String(e.actor || "").replace(/\s*\([^)]*\)\s*$/, "");
+          const role = ROLE_LABEL[e.actor_role] || "";
+          const long = (e.note || "").length > 140 && !state.expandedNotes[e.event_id];
+          const gap = prev ? (new Date(e.created_at) - new Date(prev.created_at)) / 3600000 : 0;
+          return `<div class="tl-item tone-${v.tone}">
+            <span class="tl-dot" aria-hidden="true">${v.glyph}</span>
+            <div class="tl-card">
+              <div class="tl-head">
+                <div class="tl-title">${esc(v.title)}${e.event_id === events[events.length - 1].event_id ? '<span class="tl-latest">Latest</span>' : ""}</div>
+                <div class="tl-time" title="${esc(formatDateTime(e.created_at))}">${formatDuration(hoursSince(e.created_at))} ago</div>
+              </div>
+              <div class="tl-by">${esc(who)}${role ? " · " + esc(role) : ""}</div>
+              ${v.handed ? `<span class="tl-chip">Handed to ${esc(v.handed)}</span>` : ""}
+              ${v.facts.length ? `<div class="tl-facts">${v.facts.join(" · ")}</div>` : ""}
+              ${e.note ? `<div class="tl-note"><span class="tl-note-label">${esc(v.label)}</span>
+                <blockquote class="${long ? "clamp" : ""}">${esc(e.note)}</blockquote>
+                ${(e.note || "").length > 140 ? `<button type="button" class="tl-more" data-note-toggle="${e.event_id}">${long ? "Show more" : "Show less"}</button>` : ""}</div>` : ""}
             </div>
-            <div class="tl-by">${esc(who)}${role ? " · " + esc(role) : ""}</div>
-            ${e.from_status ? `<div class="tl-move">${moveLabel} ${statusBadge({ status: e.to_status })}</div>` : ""}
-            ${d.text ? `<div class="tl-note"><div class="tl-note-label">${esc(d.label)}</div><blockquote>${esc(d.text)}</blockquote></div>` : ""}
-          </div>
-        </div>`;
-      }).join("")}</div>`;
+          </div>${prev && gap * 60 >= 1 ? `<div class="tl-gap">${esc(stageLabel(e.from_status))} · ${formatDuration(gap)}</div>` : ""}`;
+        }).join("");
+        return `<button type="button" class="tl-phase ${closed ? "closed" : ""}" data-phase-toggle="${key}" aria-expanded="${!closed}">
+          <span class="caret">▾</span>${esc(PHASES[g.phase] || "Other")} · ${g.rows.length} step${g.rows.length === 1 ? "" : "s"}</button>${cards}`;
+      }).join("");
+
+      return `${nowCardHtml(t, events)}
+        ${hasIssues ? `<div class="hist-tools"><button type="button" class="${issuesOnly ? "on" : ""}" data-history-filter="${id}">${issuesOnly ? "Showing issues only" : "Issues only"}</button></div>` : ""}
+        <div class="tl">${body || '<div class="text-xs" style="color:var(--muted);">No issues recorded.</div>'}</div>`;
     }
 
     function renderBoard() {
@@ -1021,7 +1090,7 @@
           const open = !!state.openHistory[t.ticket_id];
           const events = state.history[t.ticket_id];
           const timeline = open
-            ? `<div class="mt-4 pt-4" style="border-top:1px solid var(--line);">${historyHtml(events)}</div>`
+            ? `<div class="mt-4 pt-4" style="border-top:1px solid var(--line);">${historyView(t, events)}</div>`
             : "";
           return `<div class="card p-5 ${t.is_overdue ? "overdue" : ""}">
             ${ticketHeader(t)}${progressHtml(t)}${ticketDetails(t)}
@@ -1453,6 +1522,16 @@
 
       $("board-show-closed").addEventListener("change", renderBoard);
       $("board-list").addEventListener("click", async (e) => {
+        const phase = e.target.closest("[data-phase-toggle]");
+        const note = e.target.closest("[data-note-toggle]");
+        const filter = e.target.closest("[data-history-filter]");
+        if (phase || note || filter) {
+          if (phase) { const k = phase.getAttribute("data-phase-toggle"); state.collapsed[k] = !state.collapsed[k]; }
+          if (note) { const k = note.getAttribute("data-note-toggle"); state.expandedNotes[k] = !state.expandedNotes[k]; }
+          if (filter) { const k = filter.getAttribute("data-history-filter"); state.issuesOnly[k] = !state.issuesOnly[k]; }
+          renderBoard();
+          return;
+        }
         const b = e.target.closest("[data-history]");
         if (!b) return;
         const id = b.getAttribute("data-history");

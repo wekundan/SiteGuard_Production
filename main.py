@@ -42,6 +42,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    event,
     func,
     inspect,
     text,
@@ -360,8 +361,52 @@ class TicketEvent(Base):
     )
     from_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     to_status: Mapped[str] = mapped_column(String(30), nullable=False)
-    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # the user's own words only
+    # What happened, independent of workflow columns. The UI builds titles from event_type (+ payload),
+    # so wording can change without touching stored data.
+    event_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    phase: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    tone: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # success | pending | problem
+    payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: structured facts (venue, eta, parts...)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+# (from_status, to_status) -> (event_type, phase, tone). A move between two stages is an attribute of the
+# event; remarks that keep the same stage are events too (from == to).
+_EVENT_KINDS: dict[tuple[Optional[str], str], tuple[str, str, str]] = {
+    (None, "pending_inspection"): ("breakdown.reported", "report", "pending"),
+    ("pending_inspection", "pending_parts_check"): ("inspection.completed_in_house", "inspection", "success"),
+    ("pending_inspection", "quotation_requested"): ("inspection.completed_outside", "inspection", "success"),
+    ("quotation_requested", "quotation_requested"): ("quotation.remark_added", "quotation", "pending"),
+    ("quotation_requested", "pending_quotation"): ("quotation.requested", "quotation", "pending"),
+    ("pending_quotation", "pending_approval"): ("quotation.submitted", "quotation", "pending"),
+    ("pending_approval", "pending_vendor_dispatch"): ("quotation.approved", "quotation", "success"),
+    ("pending_approval", "pending_quotation"): ("quotation.rejected", "quotation", "problem"),
+    ("pending_vendor_dispatch", "pending_vendor_dispatch"): ("vendor.not_sent", "repair", "pending"),
+    ("pending_vendor_dispatch", "vendor_repair_in_progress"): ("vendor.machine_sent", "repair", "success"),
+    ("vendor_repair_in_progress", "cleared"): ("vendor.machine_received", "repair", "success"),
+    ("pending_parts_check", "repair_in_progress"): ("parts.available", "parts", "success"),
+    ("pending_parts_check", "pending_dispatch"): ("parts.requested", "parts", "pending"),
+    ("pending_dispatch", "in_transit"): ("parts.dispatched", "parts", "success"),
+    ("pending_dispatch", "pending_local_purchase"): ("parts.local_purchase_requested", "parts", "pending"),
+    ("pending_local_purchase", "in_transit"): ("parts.ordered_locally", "parts", "success"),
+    ("in_transit", "repair_in_progress"): ("parts.received", "parts", "success"),
+    ("repair_in_progress", "pending_dispatch"): ("parts.wrong_returned", "parts", "problem"),
+    ("repair_in_progress", "in_transit"): ("parts.wrong_exchange", "parts", "problem"),
+    ("repair_in_progress", "cleared"): ("repair.cleared", "repair", "success"),
+    ("cleared", "closed"): ("record.closed", "close", "success"),
+}
+
+
+def classify_event(from_status: Optional[str], to_status: str) -> tuple[str, str, str]:
+    return _EVENT_KINDS.get((from_status, to_status), ("status.changed", "other", "pending"))
+
+
+@event.listens_for(TicketEvent, "before_insert")
+def _fill_event_kind(mapper, connection, target: TicketEvent) -> None:
+    """Every code path that logs an event (including seed data) gets its type, phase and tone."""
+    if target.event_type is None:
+        target.event_type, target.phase, target.tone = classify_event(target.from_status, target.to_status)
 
 
 # ============================================================================
@@ -540,6 +585,11 @@ def add_missing_columns() -> None:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN parts_source VARCHAR(10)"))
         if "parts_issue_note" not in cols:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN parts_issue_note TEXT"))
+        if insp.has_table("ticket_events"):
+            ev_cols = {c["name"] for c in insp.get_columns("ticket_events")}
+            for name, ddl in (("event_type", "VARCHAR(50)"), ("phase", "VARCHAR(20)"), ("tone", "VARCHAR(10)"), ("payload", "TEXT")):
+                if name not in ev_cols:
+                    conn.execute(text(f"ALTER TABLE ticket_events ADD COLUMN {name} {ddl}"))
 
 
 def _requisition_raiser_from_events(db: Session, ticket_id: str) -> Optional[str]:
@@ -598,6 +648,40 @@ def backfill_requisition_by() -> None:
         db.commit()
 
 
+# Old events stored display text in `note` ("Rejected: ...", "Root cause: ..."). One-time clean-up when
+# a row has no event_type yet: classify it and keep only what the user actually wrote.
+_OLD_NOTE_PREFIXES = (
+    "in_house: ", "outside: ", "Requisition: ", "Purchase locally: ", "Ordered locally: ", "Wrong parts: ",
+    "Rejected: ", "Sent to vendor: ", "Not sent yet: ", "Received at site: ", "Spares received at site: ", "Root cause: ",
+)
+_OLD_GENERIC_NOTES = {
+    "Spares available in site store", "Spares received at site", "Breakdown cleared", "Quotation request logged",
+    "Quotation approved",
+}
+
+
+def clean_legacy_note(note: Optional[str]) -> Optional[str]:
+    text_ = (note or "").strip()
+    if not text_ or text_ in _OLD_GENERIC_NOTES:
+        return None
+    for prefix in _OLD_NOTE_PREFIXES:
+        if text_.startswith(prefix):
+            return text_[len(prefix):].strip() or None
+    return text_.replace("📎 ", "").strip() or None
+
+
+def backfill_event_types() -> None:
+    if not inspect(engine).has_table("ticket_events"):
+        return
+    with SessionLocal() as db:
+        old = db.query(TicketEvent).filter(TicketEvent.event_type.is_(None)).all()
+        for ev in old:
+            ev.event_type, ev.phase, ev.tone = classify_event(ev.from_status, ev.to_status)
+            ev.note = clean_legacy_note(ev.note)
+        if old:
+            db.commit()
+
+
 def sync_postgres_enum_labels(type_name: str, labels: list[str]) -> None:
     """create_all does not add new values to an existing PostgreSQL ENUM type."""
     if "postgresql" not in DATABASE_URL:
@@ -633,6 +717,7 @@ async def lifespan(app: FastAPI):
     sync_postgres_enum_labels("user_role", [r.value for r in UserRole])
     sync_postgres_enum_labels("repair_venue", [v.value for v in RepairVenue])
     add_missing_columns()
+    backfill_event_types()
     migrate_legacy_user_roles()
     backfill_requisition_by()
     migrate_stuck_quotation_request_logs()
@@ -944,24 +1029,45 @@ def get_ticket(db: Session, ticket_id: str) -> Ticket:
     return ticket
 
 
-def move_ticket(db: Session, ticket: Ticket, new_status: TicketStatus, actor: User, note: Optional[str] = None) -> None:
-    """Single entry point for status changes: validates the transition and logs it."""
+def log_event(
+    ticket: Ticket,
+    actor: User,
+    from_status: Optional[str],
+    to_status: str,
+    note: Optional[str] = None,
+    payload: Optional[dict] = None,
+    when: Optional[datetime] = None,
+) -> TicketEvent:
+    return TicketEvent(
+        ticket_id=ticket.ticket_id,
+        actor_id=actor.user_id,
+        from_status=from_status,
+        to_status=to_status,
+        note=(note or "").strip() or None,
+        payload=json.dumps(payload, default=str) if payload else None,
+        created_at=when or _now(),
+    )
+
+
+def move_ticket(
+    db: Session,
+    ticket: Ticket,
+    new_status: TicketStatus,
+    actor: User,
+    note: Optional[str] = None,
+    payload: Optional[dict] = None,
+) -> None:
+    """Single entry point for status changes: validates the transition and logs it.
+
+    `note` is only what the user typed (None when they typed nothing); structured facts go in `payload`.
+    """
     if new_status not in ALLOWED_TRANSITIONS[ticket.status]:
         raise HTTPException(
             status_code=409,
             detail=f"Cannot move ticket from '{ticket.status.value}' to '{new_status.value}'.",
         )
     now = _now()
-    db.add(
-        TicketEvent(
-            ticket_id=ticket.ticket_id,
-            actor_id=actor.user_id,
-            from_status=ticket.status.value,
-            to_status=new_status.value,
-            note=note,
-            created_at=now,
-        )
-    )
+    db.add(log_event(ticket, actor, ticket.status.value, new_status.value, note, payload, now))
     ticket.status = new_status
     ticket.stage_entered_at = now
 
@@ -1037,7 +1143,7 @@ def create_ticket(
     machine.status = MachineStatus.BROKEN_DOWN
     db.add(ticket)
     db.flush()
-    db.add(TicketEvent(ticket_id=ticket.ticket_id, actor_id=reporter.user_id, from_status=None, to_status=S.PENDING_INSPECTION.value))
+    db.add(log_event(ticket, reporter, None, S.PENDING_INSPECTION.value))
     try:
         return finish(db, ticket)
     except IntegrityError:  # two reports raced; the partial unique index caught it
@@ -1056,7 +1162,7 @@ def inspect_ticket(
     ticket = get_ticket(db, ticket_id)
     target = S.PENDING_PARTS_CHECK if payload.repair_venue == RepairVenue.IN_HOUSE else S.QUOTATION_REQUESTED
     description = payload.issue_description.strip()
-    move_ticket(db, ticket, target, actor, note=f"{payload.repair_venue.value}: {description}")
+    move_ticket(db, ticket, target, actor, note=description, payload={"venue": payload.repair_venue.value})
     ticket.issue_description = description
     ticket.repair_venue = payload.repair_venue
     ticket.inspected_at = _now()
@@ -1073,10 +1179,10 @@ def parts_check(
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
     if payload.available:
-        move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note="Spares available in site store")
+        move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor)
     else:
         parts = payload.parts_required.strip()
-        move_ticket(db, ticket, S.PENDING_DISPATCH, actor, note=f"Requisition: {parts}")
+        move_ticket(db, ticket, S.PENDING_DISPATCH, actor, note=parts)
         ticket.parts_required = parts
         ticket.requisition_by = actor.user_id
     return finish(db, ticket)
@@ -1104,7 +1210,7 @@ def dispatch_spares(
         if raiser:
             ticket.requisition_by = raiser
     details = payload.dispatch_details.strip()
-    move_ticket(db, ticket, S.IN_TRANSIT, actor, note=details)
+    move_ticket(db, ticket, S.IN_TRANSIT, actor, note=details, payload={"eta_date": payload.eta_date.isoformat()})
     ticket.dispatch_details = details
     ticket.parts_source = "central"
     ticket.eta_date = payload.eta_date
@@ -1123,7 +1229,7 @@ def request_local_purchase(
     if ticket.status != S.PENDING_DISPATCH:
         raise HTTPException(status_code=409, detail="This ticket is not waiting on the central store.")
     note = payload.note.strip()
-    move_ticket(db, ticket, S.PENDING_LOCAL_PURCHASE, actor, note=f"Purchase locally: {note}")
+    move_ticket(db, ticket, S.PENDING_LOCAL_PURCHASE, actor, note=note)
     ticket.dispatch_details = f"Central store asks site to purchase locally: {note}"  # shown to the mechanical team
     ticket.parts_source = "local"
     return finish(db, ticket)
@@ -1141,7 +1247,7 @@ def confirm_local_purchase(
     if ticket.status != S.PENDING_LOCAL_PURCHASE:
         raise HTTPException(status_code=409, detail="The central store has not asked for a local purchase on this ticket.")
     note = payload.note.strip()
-    move_ticket(db, ticket, S.IN_TRANSIT, actor, note=f"Ordered locally: {note}")
+    move_ticket(db, ticket, S.IN_TRANSIT, actor, note=note, payload={"eta_date": payload.eta_date.isoformat()})
     ticket.dispatch_details = f"Ordered locally: {note}"
     ticket.parts_source = "local"
     ticket.eta_date = payload.eta_date
@@ -1160,7 +1266,7 @@ def receive_spares(
     if ticket.status != S.IN_TRANSIT:
         raise HTTPException(status_code=409, detail="This ticket is not awaiting spare receipt.")
     entry = ((payload.note if payload else None) or "").strip()
-    move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note=f"Spares received at site: {entry}" if entry else "Spares received at site")
+    move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note=entry or None)
     ticket.eta_date = None
     ticket.parts_issue_note = None  # whatever was wrong has now been replaced
     return finish(db, ticket)
@@ -1182,7 +1288,10 @@ def report_wrong_parts(
         raise HTTPException(status_code=409, detail="This repair used parts from the site store, not a requisition.")
     note = payload.note.strip()
     target = S.PENDING_DISPATCH if ticket.parts_source == "central" else S.IN_TRANSIT
-    move_ticket(db, ticket, target, actor, note=f"Wrong parts: {note}")
+    move_ticket(
+        db, ticket, target, actor, note=note,
+        payload={"eta_date": payload.eta_date.isoformat()} if payload.eta_date and target == S.IN_TRANSIT else None,
+    )
     ticket.parts_issue_note = note
     ticket.eta_date = payload.eta_date if target == S.IN_TRANSIT else None
     return finish(db, ticket)
@@ -1208,13 +1317,9 @@ def send_quotation_request_message(
         f"{ticket.quotation_request_note}\n{line}" if ticket.quotation_request_note else line
     )
     db.add(
-        TicketEvent(
-            ticket_id=ticket.ticket_id,
-            actor_id=actor.user_id,
-            from_status=S.QUOTATION_REQUESTED.value,
-            to_status=S.QUOTATION_REQUESTED.value,
-            note=line,
-            created_at=_now(),
+        log_event(
+            ticket, actor, S.QUOTATION_REQUESTED.value, S.QUOTATION_REQUESTED.value,
+            note=note, payload={"attachment": attach} if attach else None,
         )
     )
     return finish(db, ticket)
@@ -1237,7 +1342,7 @@ def continue_quotation_request(
     )
     if not has_remark and not has_file:
         raise HTTPException(status_code=422, detail="Send at least one remark or file first.")
-    move_ticket(db, ticket, S.PENDING_QUOTATION, actor, note="Quotation request logged")
+    move_ticket(db, ticket, S.PENDING_QUOTATION, actor)
     return finish(db, ticket)
 
 
@@ -1275,9 +1380,9 @@ def decide_quotation(
     ticket = get_ticket(db, ticket_id)
     note = (payload.note or "").strip() or None
     if payload.approved:
-        move_ticket(db, ticket, S.PENDING_VENDOR_DISPATCH, actor, note=note or "Quotation approved")
+        move_ticket(db, ticket, S.PENDING_VENDOR_DISPATCH, actor, note=note)
     else:
-        move_ticket(db, ticket, S.PENDING_QUOTATION, actor, note=f"Rejected: {note}")
+        move_ticket(db, ticket, S.PENDING_QUOTATION, actor, note=note)
     ticket.approval_note = note
     return finish(db, ticket)
 
@@ -1298,18 +1403,9 @@ def log_vendor_dispatch(
     note = payload.note.strip()
     ticket.vendor_dispatch_note = note
     if payload.sent_to_vendor:
-        move_ticket(db, ticket, S.VENDOR_REPAIR_IN_PROGRESS, actor, note=f"Sent to vendor: {note}")
+        move_ticket(db, ticket, S.VENDOR_REPAIR_IN_PROGRESS, actor, note=note)
     else:
-        db.add(
-            TicketEvent(
-                ticket_id=ticket.ticket_id,
-                actor_id=actor.user_id,
-                from_status=S.PENDING_VENDOR_DISPATCH.value,
-                to_status=S.PENDING_VENDOR_DISPATCH.value,
-                note=f"Not sent yet: {note}",
-                created_at=_now(),
-            )
-        )
+        db.add(log_event(ticket, actor, S.PENDING_VENDOR_DISPATCH.value, S.PENDING_VENDOR_DISPATCH.value, note=note))
     return finish(db, ticket)
 
 
@@ -1325,7 +1421,7 @@ def receive_vehicle_from_vendor(
     if ticket.status != S.VENDOR_REPAIR_IN_PROGRESS:
         raise HTTPException(status_code=409, detail="Confirm receipt only after the machine is at the vendor for repair.")
     note = payload.note.strip()
-    move_ticket(db, ticket, S.CLEARED, actor, note=f"Received at site: {note}")
+    move_ticket(db, ticket, S.CLEARED, actor, note=note)
     ticket.vehicle_received_note = note
     ticket.cleared_at = ticket.stage_entered_at
     machine = db.get(Machine, ticket.machine_id)
@@ -1347,7 +1443,7 @@ def clear_breakdown(
             status_code=409,
             detail="In-house repairs use Mark breakdown cleared; outside repairs use vehicle receipt at site.",
         )
-    move_ticket(db, ticket, S.CLEARED, actor, note="Breakdown cleared")
+    move_ticket(db, ticket, S.CLEARED, actor)
     ticket.cleared_at = ticket.stage_entered_at
     machine = db.get(Machine, ticket.machine_id)
     if machine:
@@ -1371,7 +1467,7 @@ def close_ticket(
         and not db.query(TicketFile).filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == "bill").count()
     ):
         raise HTTPException(status_code=422, detail="Attach the vendor bill before closing an outside repair.")
-    move_ticket(db, ticket, S.CLOSED, actor, note=f"Root cause: {payload.root_cause.strip()}")
+    move_ticket(db, ticket, S.CLOSED, actor, note=payload.root_cause.strip(), payload={"repair_cost": payload.repair_cost})
     ticket.root_cause = payload.root_cause.strip()
     ticket.invoice_number = (payload.invoice_number or "").strip() or None
     ticket.repair_cost = payload.repair_cost
@@ -1526,6 +1622,11 @@ def get_ticket_events(
     )
     return [
         {
+            "event_id": e.event_id,
+            "type": e.event_type,
+            "phase": e.phase,
+            "tone": e.tone,
+            "payload": json.loads(e.payload) if e.payload else {},
             "from_status": e.from_status,
             "to_status": e.to_status,
             "actor": name,

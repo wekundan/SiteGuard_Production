@@ -115,6 +115,16 @@ with TestClient(main.app) as c:
     ev = [e["to_status"] for e in raw_events]
     check(ev ==["pending_inspection", "pending_parts_check", "pending_dispatch", "in_transit", "repair_in_progress", "cleared", "closed"], "event log follows SOP")
     check(tickets()[t1]["repair_cost"] == 1200.5 and tickets()[t1]["downtime_hours"] >= 0, "closure record stored")
+    check(
+        [e["type"] for e in raw_events]
+        == ["breakdown.reported", "inspection.completed_in_house", "parts.requested", "parts.dispatched", "parts.received", "repair.cleared", "record.closed"],
+        "events carry stable type codes",
+    )
+    check(all(e["phase"] and e["tone"] in ("success", "pending", "problem") for e in raw_events), "events carry phase and tone")
+    check(raw_events[1]["payload"] == {"venue": "in_house"} and raw_events[1]["note"] == "Hydraulic hose burst", "inspection: clean note plus structured payload")
+    check(raw_events[2]["note"] == "Hose 1in x2", "no display prefix is stored in notes")
+    check(raw_events[3]["payload"] == {"eta_date": "2030-01-01"} and raw_events[4]["note"] is None, "dispatch keeps its ETA; receipt without an entry has no note")
+    check(raw_events[-1]["payload"] == {"repair_cost": 1200.5} and raw_events[-1]["note"] == "Worn hose", "closure: root cause as note, cost in payload")
 
     # --- Parts: central store supplies or asks site to buy; wrong parts loop back -----------
     M_ROLLER = "10000000-0000-4000-8000-000000000006"
@@ -216,6 +226,12 @@ with TestClient(main.app) as c:
     call("PUT", f"/api/tickets/{t2}/approval", mgmt, 422, "rejection needs a reason", {"approved": False})
     call("PUT", f"/api/tickets/{t2}/approval", mgmt, 200, "management rejects", {"approved": False, "note": "Too high"})
     check(tickets()[t2]["status"] == "pending_quotation" and tickets()[t2]["approval_note"] == "Too high", "rejected quote returns to quotation")
+    t2_events = c.get(f"/api/tickets/{t2}/events", headers=mgmt).json()
+    rej = [e for e in t2_events if e["type"] == "quotation.rejected"]
+    check(len(rej) == 1 and rej[0]["tone"] == "problem" and rej[0]["note"] == "Too high", "rejection is a problem event with the bare reason as its note")
+    remarks = [e for e in t2_events if e["type"] == "quotation.remark_added"]
+    check(remarks and all(e["from_status"] == e["to_status"] for e in remarks), "remarks are events that keep the same stage")
+    check(any(e["payload"].get("attachment") for e in remarks), "remark with a file records the attachment in its payload")
     call(
         "PUT",
         f"/api/tickets/{t2}/quotation",
@@ -267,6 +283,21 @@ with TestClient(main.app) as c:
     check(len(past) == 5 and len(in_year) == 4, "seed gives machine 1 four breakdowns in the last year and one older")
     check(m["tickets_by_stage"]["pending_vendor_dispatch"] == 1 and "pending_inspection" in m["stage_average_hours"], "stage counts and averages")
     check(m["average_downtime_hours"] is not None, "average downtime computed")
+
+    # --- old rows (display text in notes, no type) are cleaned up once at startup --------
+    with main.SessionLocal() as db:
+        legacy_ticket = next(iter(tickets()))
+        db.add(main.TicketEvent(ticket_id=legacy_ticket, actor_id=main.U_MECH, from_status="pending_approval",
+                                to_status="pending_quotation", note="Rejected: price too high", event_type="x"))
+        db.add(main.TicketEvent(ticket_id=legacy_ticket, actor_id=main.U_MECH, from_status="in_transit",
+                                to_status="repair_in_progress", note="Spares received at site"))
+        db.commit()
+        db.query(main.TicketEvent).filter(main.TicketEvent.ticket_id == legacy_ticket, main.TicketEvent.note.in_(
+            ["Rejected: price too high", "Spares received at site"])).update({"event_type": None, "phase": None, "tone": None}, synchronize_session=False)
+        db.commit()
+    main.backfill_event_types()
+    legacy = [e for e in c.get(f"/api/tickets/{legacy_ticket}/events", headers=mgmt).json() if e["type"] in ("quotation.rejected", "parts.received")]
+    check({(e["type"], e["note"]) for e in legacy} >= {("quotation.rejected", "price too high"), ("parts.received", None)}, "legacy notes are classified and stripped of display text")
 
     # --- demo reset --------------------------------------------------------
     call("POST", "/api/reset-demo", pm, 403, "only management resets")

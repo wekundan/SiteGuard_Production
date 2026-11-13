@@ -17,8 +17,13 @@ Every status change is recorded in `ticket_events` (who, when, from, to, note); 
 - After a save the card confirms in place (green flash, "recorded" banner, new status badge). If the ticket moves to another team, a confirmation card
   takes its place for a few seconds ("Now with Central store") before fading.
 - Remarks appear immediately as "sending…"; errors show inside the card as well as in the toast; attached files show as completed.
-- The Board's History is a timeline of action-titled cards, newest first: title (e.g. "Quotation Rejected"), time, author and role, the stage it moved to,
-  and a labelled note box (e.g. "Rejection Reason"). Green = completed, amber = waiting, red = rejection. `GET /api/tickets/{id}/events` now includes `actor_role`.
+- **History timeline (Board):** a pinned "Now" card (what is happening, who has it, time in this step, SLA, issues so far), then entries newest first, grouped into
+  collapsible phases. Each entry has an outcome title ("Inspection Completed — Repair In-house", "Wrong Parts Found — Sent Back"), time, author and role, a
+  "Handed to …" chip only when the ticket changes hands, key facts (ETA, attachment, cost), a labelled note box, and the time spent between steps. Green = completed,
+  amber = waiting, red = problem; "Issues only" filters to the red ones.
+  - Data: `ticket_events` stores facts: `event_type` (e.g. `parts.wrong_returned`), `phase`, `tone`, `payload` (JSON) and the user's own `note`. The wording lives in one
+    place (`EVENT_COPY` in `static/index.html`), so retitling needs no data change; a new stage adds one line there and one row in `_EVENT_KINDS` in `main.py`.
+    Older rows are classified and cleaned automatically at startup.
 - **Machine history (Dashboard):** breakdowns per machine over the last 12 months, with total downtime and cost; tap a machine to see each repair.
   It is computed from the existing tickets, so there is nothing extra to maintain. The demo seed includes a few past repairs (one older than a year, which is excluded).
 - Timers are live: "reported … ago", downtime and "Due in / Overdue" tick every second, and a badge turns red the moment its deadline passes.

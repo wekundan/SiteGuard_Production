@@ -302,6 +302,7 @@
       taskStatuses: null,
       myTasks: null,
       appVersion: "",
+      choices: {},        // ticketId:field -> dropdown value (shows one action panel at a time)
       pendingUploads: {},
       pendingUploadLists: {},
       openMachine: {},   // machineId -> history expanded on the dashboard
@@ -520,7 +521,10 @@
       const index = state.lastIndex;
       try {
         const result = await action();
-        if (ticketId && !keepDrafts) Object.keys(state.drafts).filter((k) => k.startsWith(ticketId + ":")).forEach((k) => delete state.drafts[k]);
+        if (ticketId && !keepDrafts) {
+          Object.keys(state.drafts).filter((k) => k.startsWith(ticketId + ":")).forEach((k) => delete state.drafts[k]);
+          Object.keys(state.choices).filter((k) => k.startsWith(ticketId + ":")).forEach((k) => delete state.choices[k]);
+        }
         showToast(successMessage);
         // Keep the ticket the server returned: roles that cannot see every ticket still need it to confirm where it went next.
         if (ticketId) state.acks[ticketId] = { message: successMessage, index: Math.max(index, 0), played: false, ticket: result && result.ticket_id === ticketId ? result : null };
@@ -672,6 +676,14 @@
         loading ? '<span class="spin" aria-hidden="true"></span>Saving…' : label}</button>`;
     };
     const lbl = (text) => `<div class="label mb-1.5">${text}</div>`;
+    const choiceVal = (t, field) => state.choices[`${t.ticket_id}:${field}`] || "";
+    const stepSelect = (t, field, placeholder, options) => {
+      const cur = choiceVal(t, field);
+      const opts =
+        `<option value="">${esc(placeholder)}</option>` +
+        options.map((o) => `<option value="${esc(o.value)}"${cur === o.value ? " selected" : ""}>${esc(o.label)}</option>`).join("");
+      return `<select data-choice="${t.ticket_id}:${field}" class="field">${opts}</select>`;
+    };
     const UPLOAD_NAME = { dispatch: "Dispatch file", bill: "Vendor bill" };
     const upload = (t, kind, label, defer = false) => {
       const attached = defer ? [] : (t.files || []).filter((f) => f.kind === kind);
@@ -799,28 +811,54 @@
 
     function taskActions(t) {
       switch (t.status) {
-        case "pending_inspection":
-          return `${input(t, "issue", 'placeholder="Inspection findings: what is wrong?"', "textarea")}
-            ${pair(btn("inspect_in_house", t, "In-house workshop", "primary"), btn("inspect_outside", t, "Outside workshop", "outline"))}`;
-        case "pending_parts_check":
-          return `<div class="text-[13px]" style="color:var(--muted);">Check the site store for the spare parts.</div>
-            ${input(t, "parts", 'placeholder="If not in stock: list the parts to requisition"', "textarea")}
-            ${pair(btn("parts_available", t, "Parts available", "success"), btn("parts_missing", t, "Raise requisition", "outline"))}`;
-        case "pending_dispatch":
-          // Two ways to answer a requisition: supply the parts, or hand it back so site buys them.
-          return `<div class="rounded-xl p-3 space-y-2.5" style="border:1px solid var(--line);">
-              <div class="text-[13px] font-semibold" style="color:var(--navy);">Option 1 · Supply from central store</div>
+        case "pending_inspection": {
+          const route = choiceVal(t, "inspect");
+          let body = `${lbl("Choose action")}${stepSelect(t, "inspect", "Choose repair path…", [
+            { value: "in_house", label: "In-house workshop" },
+            { value: "outside", label: "Outside workshop" }
+          ])}`;
+          if (route === "in_house" || route === "outside") {
+            body += `<div class="space-y-2.5 mt-2.5">${input(t, "issue", 'placeholder="Inspection findings: what is wrong?"', "textarea")}
+              ${btn(route === "in_house" ? "inspect_in_house" : "inspect_outside", t, "Submit inspection", "primary")}</div>`;
+          }
+          return body;
+        }
+        case "pending_parts_check": {
+          const stock = choiceVal(t, "parts");
+          let body = `${lbl("Choose action")}${stepSelect(t, "parts", "After checking the site store…", [
+            { value: "available", label: "Parts available — start repair" },
+            { value: "missing", label: "Not in stock — raise requisition" }
+          ])}`;
+          if (stock === "missing") {
+            body += `<div class="space-y-2.5 mt-2.5">${input(t, "parts", 'placeholder="List the parts to requisition"', "textarea")}
+              ${btn("parts_missing", t, "Raise requisition", "primary")}</div>`;
+          } else if (stock === "available") {
+            body += `<div class="mt-2.5">${btn("parts_available", t, "Parts available", "success")}</div>`;
+          }
+          return body;
+        }
+        case "pending_dispatch": {
+          const central = choiceVal(t, "central");
+          let body = `${lbl("Choose action")}${stepSelect(t, "central", "How do you want to handle this requisition?", [
+            { value: "dispatch", label: "Supply from central store" },
+            { value: "local", label: "Ask site to purchase locally" }
+          ])}`;
+          if (central === "dispatch") {
+            body += `<div class="space-y-2.5 mt-2.5">
               ${dispatchAttachStatus(t)}
               ${upload(t, "dispatch", "Dispatch challan / PO (PDF or photo, max 5 MB)")}
               ${input(t, "dispatchnote", 'placeholder="Remarks: parts dispatched, or ordered and will reach site"')}
               <div>${lbl("Will reach site by")}<input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta") || daysFromNowDate(2)}" class="field" /></div>
-              ${btn("dispatch", t, "Submit: parts dispatched / ordered", "primary")}
-            </div>
-            <div class="rounded-xl p-3 space-y-2.5" style="border:1px solid var(--line);">
-              <div class="text-[13px] font-semibold" style="color:var(--navy);">Option 2 · Ask site to purchase locally</div>
-              ${input(t, "localreq", 'placeholder="Remarks for the mechanical team: what to buy, budget, preferred vendor"', "textarea")}
-              ${btn("request_local_purchase", t, "Send back to mechanical team", "outline")}
+              ${btn("dispatch", t, "Submit", "primary")}
             </div>`;
+          } else if (central === "local") {
+            body += `<div class="space-y-2.5 mt-2.5">
+              ${input(t, "localreq", 'placeholder="Remarks for the mechanical team: what to buy, budget, preferred vendor"', "textarea")}
+              ${btn("request_local_purchase", t, "Send to mechanical team", "primary")}
+            </div>`;
+          }
+          return body;
+        }
         case "pending_local_purchase":
           return `<div class="text-[13px]" style="color:var(--muted);">The central store asked you to buy these parts at site. Order them, then tell the site store what to expect.</div>
             ${input(t, "localorder", 'placeholder="Remarks: parts ordered, vendor, bill or PO number"', "textarea")}
@@ -839,26 +877,42 @@
         case "pending_approval":
           return `${input(t, "note", 'placeholder="Note (required if rejecting)"')}
             ${pair(btn("approve", t, "Approve", "success"), btn("reject", t, "Reject", "danger"))}`;
-        case "pending_vendor_dispatch":
-          return `<div class="text-[13px]" style="color:var(--muted);">Log whether the broken machine has been sent to the approved vendor.</div>
-            ${input(t, "vdispatch", 'placeholder="Remarks: transporter, date, condition on dispatch"', "textarea")}
-            ${pair(btn("vendor_sent", t, "Sent to vendor", "primary"), btn("vendor_not_sent", t, "Not sent yet", "outline"))}`;
+        case "pending_vendor_dispatch": {
+          const vd = choiceVal(t, "vendor");
+          let body = `${lbl("Choose action")}${stepSelect(t, "vendor", "Has the machine been sent to the vendor?", [
+            { value: "sent", label: "Sent to vendor" },
+            { value: "not_sent", label: "Not sent yet" }
+          ])}`;
+          if (vd === "sent" || vd === "not_sent") {
+            body += `<div class="space-y-2.5 mt-2.5">${input(t, "vdispatch", 'placeholder="Remarks: transporter, date, condition on dispatch"', "textarea")}
+              ${btn(vd === "sent" ? "vendor_sent" : "vendor_not_sent", t, "Submit", "primary")}</div>`;
+          }
+          return body;
+        }
         case "vendor_repair_in_progress":
           return `<div class="text-[13px]" style="color:var(--muted);">After vendor repair, confirm the machine is back on site.</div>
             ${input(t, "vreceive", 'placeholder="Receipt remarks: date, condition, driver"', "textarea")}
             ${btn("vehicle_receive", t, "Vehicle received — close breakdown", "success")}`;
         case "repair_in_progress": {
-          const viaReq = t.parts_source === "central" || t.parts_source === "local"; // parts arrived through a requisition
-          return `${btn("clear", t, viaReq ? "Parts installed: machine is ready" : "Mark breakdown cleared", "success")}
-            ${viaReq ? `<div class="rounded-xl p-3 space-y-2.5" style="border:1px dashed #e3a8b5; background:#fffafb;">
-              <div class="text-[13px] font-semibold" style="color:#9f1239;">Wrong or defective parts?</div>
-              <div class="text-xs" style="color:var(--muted);">${t.parts_source === "central"
-                ? "Report it and the request goes back to the central store."
-                : "Report it and the exchange goes to the site store to receive."}</div>
+          const viaReq = t.parts_source === "central" || t.parts_source === "local";
+          const repair = choiceVal(t, "repair");
+          if (!viaReq) {
+            return `${btn("clear", t, "Mark breakdown cleared", "success")}`;
+          }
+          let body = `${lbl("Choose action")}${stepSelect(t, "repair", "What do you want to do?", [
+            { value: "clear", label: "Parts installed — machine is ready" },
+            { value: "wrong", label: "Wrong or defective parts" }
+          ])}`;
+          if (repair === "clear") {
+            body += `<div class="mt-2.5">${btn("clear", t, "Confirm — breakdown cleared", "success")}</div>`;
+          } else if (repair === "wrong") {
+            body += `<div class="space-y-2.5 mt-2.5">
               ${input(t, "wrongnote", 'placeholder="What is wrong, and that it was sent back / exchange asked"', "textarea")}
               ${t.parts_source === "local" ? `<div>${lbl("Exchange will reach site by (optional)")}<input data-draft="${t.ticket_id}:wrongeta" type="date" value="${dv(t, "wrongeta")}" class="field" /></div>` : ""}
               ${btn("wrong_parts", t, "Report wrong / defective parts", "danger")}
-            </div>` : ""}`;
+            </div>`;
+          }
+          return body;
         }
         case "cleared": {
           const outside = t.repair_venue === "outside";
@@ -1496,6 +1550,12 @@
       $("view-tasks").addEventListener("input", (e) => {
         const key = e.target.getAttribute("data-draft");
         if (key) state.drafts[key] = e.target.value;
+      });
+      $("view-tasks").addEventListener("change", (e) => {
+        const key = e.target.getAttribute("data-choice");
+        if (!key) return;
+        state.choices[key] = e.target.value;
+        renderAll();
       });
       $("view-tasks").addEventListener("click", (e) => {
         const dismiss = e.target.closest("[data-dismiss-ack]");

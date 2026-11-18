@@ -271,7 +271,7 @@
     const ROLE_ALIASES = { supervisor: "mech_engineer", head_office: "central_store" };
     const TASKS_BY_ROLE = {
       site_office: [],
-      deo: ["cleared"],
+      deo: [],
       mech_engineer: MECH_TASKS,
       supervisor: MECH_TASKS,
       pm_incharge: [...MECH_TASKS, "cleared"],
@@ -413,7 +413,7 @@
       pending_inspection: "Mechanical team", pending_parts_check: "Mechanical team", pending_dispatch: "Central store",
       pending_local_purchase: "Mechanical team", in_transit: "Site store", quotation_requested: "Mechanical team", pending_quotation: "Mechanical team",
       pending_approval: "Management", pending_vendor_dispatch: "Mechanical team", vendor_repair_in_progress: "Mechanical team",
-      repair_in_progress: "Mechanical team", cleared: "DEO / P&M In-charge", closed: "Nobody — complete"
+      repair_in_progress: "Mechanical team", cleared: "P&M In-charge", closed: "Nobody — complete"
     };
 
     // Progress bar per repair route: steps before the current one are done.
@@ -736,7 +736,7 @@
         return (r === "mech_engineer" || r === "pm_incharge") && (t.status === "pending_quotation" || (t.status === "quotation_requested" && t.quotation_request_note));
       if (f.kind === "quotation_request")
         return (r === "mech_engineer" || r === "pm_incharge") && t.status === "quotation_requested";
-      if (f.kind === "bill") return (r === "deo" || r === "pm_incharge") && t.status === "cleared" && t.repair_venue === "outside";
+      if (f.kind === "bill") return r === "pm_incharge" && t.status === "cleared" && t.repair_venue === "outside";
       return false;
     }
 

@@ -5,8 +5,8 @@ FastAPI + Postgres + single-page mobile web app that follows the plant breakdown
 ## Workflow
 1. **Report** (Sr Civil Engineer or P&M DEO) -> 2. **Inspect and decide** (Mechanical Engineer or P&M In-charge): in-house or outside workshop.
 - **In-house:** site store check. Parts available -> repair. Not available -> requisition -> **central store dispatches** -> **site store confirms receipt** -> repair.
-- **Outside:** quotation pending / requested (remarks) -> upload vendor quotation -> enter quote details -> **management approves** (or sends back) -> **mech/PM logs dispatch to vendor** -> repair at vendor -> **mech/PM confirms vehicle received at site** (breakdown cleared) -> DEO/PM closes register with bill and cost.
-3. Mechanical dept marks the **breakdown cleared** (machine active again) -> 4. **DEO or P&M In-charge closes** the register entry with root cause and total repair cost. Downtime is calculated automatically.
+- **Outside:** quotation pending / requested (remarks) -> upload vendor quotation -> enter quote details -> **management approves** (or sends back) -> **mech/PM logs dispatch to vendor** -> repair at vendor -> **mech/PM confirms vehicle received at site** (breakdown cleared) -> **P&M In-charge** closes register with bill and cost.
+3. Mechanical dept marks the **breakdown cleared** (machine active again) -> 4. **P&M In-charge closes** the register entry with root cause and total repair cost. Downtime is calculated automatically.
 
 A machine can be reported again once its previous breakdown is cleared, even if the register entry is still open.
 Every status change is recorded in `ticket_events` (who, when, from, to, note); the Board tab shows the history.
@@ -50,7 +50,7 @@ Both loops can repeat, and every step is in the Board history. Repairs that used
 ## Quotation and bill attachments
 - **Quotation:** after outside repair is chosen, mech/PM log request remarks, then upload the vendor PDF/JPG/PNG when it arrives (upload moves the ticket to the vendor-quotation stage). Additional files can be attached before submitting to management (up to 5 per kind). Management sees files on the approval card.
 - **Dispatch (in-house requisition):** central store uploads the dispatch challan/PO PDF (or photo) while the ticket is **Awaiting central store**, then confirms dispatch. Wrong file? Use **Remove** next to the filename before confirming. Set `REQUIRE_DISPATCH_DOCS=0` to make the upload optional.
-- **Bill:** for outside repairs, the DEO or P&M In-charge must attach the vendor bill (and may enter an invoice number) when closing.
+- **Bill:** for outside repairs, the P&M In-charge must attach the vendor bill (and may enter an invoice number) when closing.
   The final billed amount is compared with the approved quotation; anything above it is flagged. Set `REQUIRE_BILL_FOR_OUTSIDE=0` to make the bill optional.
 - **Storage:** files are stored in the database (a `ticket_files` table), max 5 MB each (`MAX_UPLOAD_BYTES`). The file type is checked from its contents,
   and only logged-in users can open files. Neon's free tier is about 0.5 GB shared with everything else, so move to S3/R2 if volume grows
@@ -62,9 +62,9 @@ All demo users share the password in the `DEMO_PASSWORD` env var (local default 
 | Username | Role | Can do |
 |---|---|---|
 | `ramesh` | Sr Civil Engineer | Report breakdowns |
-| `deepak` | P&M DEO | Report; close register entry |
+| `deepak` | P&M DEO | Report breakdowns |
 | `vikram` | Mechanical Engineer | Inspect, parts check, quotation, mark cleared |
-| `meera` | P&M In-charge | Same as mechanical engineer, plus close register entry |
+| `meera` | P&M In-charge | Same as mechanical engineer, plus close register entries |
 | `suresh` | Site Store | Confirm receipt of spares in transit |
 | `ananya` | Central Store | Dispatch spares |
 | `rajeshwari` | Management | Approve quotations, dashboard, reset demo |

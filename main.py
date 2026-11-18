@@ -94,7 +94,7 @@ def get_db() -> Generator[Session, None, None]:
 
 class UserRole(str, Enum):
     SITE_OFFICE = "site_office"  # Senior Civil Engineer: reports breakdowns
-    DEO = "deo"  # P&M Data Entry Operator: reports, closes the register entry
+    DEO = "deo"  # P&M Data Entry Operator: reports breakdowns
     MECH_ENGINEER = "mech_engineer"  # Mechanical Engineer: inspects, repairs
     PM_INCHARGE = "pm_incharge"  # P&M In-charge: inspects, repairs, closes
     SITE_STORE = "site_store"  # confirms receipt of dispatched spares
@@ -190,7 +190,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.4.1")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.4.2")
 
 
 def hash_password(password: str) -> str:
@@ -534,7 +534,7 @@ def seed_initial_data(db: Session) -> None:
         h = days * 24
         add(
             n, machine, S.CLOSED,
-            [(U_SITE, PI, h), (U_MECH, PPC, h - 1), (U_MECH, RIP, h - 2), (U_MECH, CL, h - 10), (U_DEO, CLO, h - 12)],
+            [(U_SITE, PI, h), (U_MECH, PPC, h - 1), (U_MECH, RIP, h - 2), (U_MECH, CL, h - 10), (U_PM, CLO, h - 12)],
             issue_description=issue,
             repair_venue=RepairVenue.IN_HOUSE,
             root_cause=cause,
@@ -956,7 +956,7 @@ _MECH_TASK_STATUSES = (
 # Single source of truth for the "My tasks" queue (mirrored in bootstrap for the SPA).
 TASK_STATUSES_BY_ROLE: dict[UserRole, tuple[TicketStatus, ...]] = {
     UserRole.SITE_OFFICE: (),
-    UserRole.DEO: (S.CLEARED,),
+    UserRole.DEO: (),
     UserRole.MECH_ENGINEER: _MECH_TASK_STATUSES,
     UserRole.PM_INCHARGE: _MECH_TASK_STATUSES + (S.CLEARED,),
     UserRole.SITE_STORE: (S.IN_TRANSIT,),
@@ -1451,12 +1451,12 @@ def clear_breakdown(
     return finish(db, ticket)
 
 
-# SOP 9: DEO or P&M In-charge logs downtime, repair cost and root cause to close the report
+# SOP 9: P&M In-charge logs downtime, repair cost and root cause to close the report
 @app.put("/api/tickets/{ticket_id}/close", response_model=TicketResponse)
 def close_ticket(
     ticket_id: str,
     payload: CloseRequest,
-    actor: User = Depends(require_roles(UserRole.DEO, UserRole.PM_INCHARGE)),
+    actor: User = Depends(require_roles(UserRole.PM_INCHARGE)),
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
@@ -1527,7 +1527,7 @@ def assert_may_manage_file_kind(user: User, ticket: Ticket, kind: FileKind) -> N
         if ticket.status != S.PENDING_DISPATCH:
             raise HTTPException(status_code=409, detail="Dispatch documents can only be changed before dispatch is confirmed.")
     elif kind == FileKind.BILL:
-        if effective_role(user.role) not in (UserRole.DEO, UserRole.PM_INCHARGE):
+        if effective_role(user.role) != UserRole.PM_INCHARGE:
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")
         if ticket.status != S.CLEARED or ticket.repair_venue != RepairVenue.OUTSIDE:
             raise HTTPException(status_code=409, detail="Vendor bills can only be changed before the report is closed.")

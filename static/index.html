@@ -527,9 +527,6 @@
       position: relative;
       min-height: 220px;
       overflow: hidden;
-      background:
-        linear-gradient(100deg, rgba(6, 8, 12, 0.96) 0%, rgba(6, 8, 12, 0.72) 45%, rgba(6, 8, 12, 0.45) 100%),
-        url("https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=1800&q=80") center 45% / cover no-repeat;
     }
     .login-hero::before {
       content: "";
@@ -652,6 +649,172 @@
       box-shadow: 0 0 24px rgba(34, 211, 238, 0.15);
     }
     .login-mark svg { width: 1.65rem; height: 1.65rem; }
+
+    /* ---- login motion: blueprint, dust, parallax, glass form ---- */
+    @keyframes blueprintPan {
+      0% { background-position: 0 0, 0 0; }
+      100% { background-position: 48px 48px, 0 0; }
+    }
+    @keyframes roadScroll {
+      0% { background-position: 0 0; }
+      100% { background-position: 68px 0; }
+    }
+    @keyframes rigDrive {
+      0%, 100% { transform: translateX(-4%) translateY(0); opacity: 0.22; }
+      50% { transform: translateX(4%) translateY(-2px); opacity: 0.3; }
+    }
+    @keyframes loginBtnShine {
+      0% { transform: translateX(-120%) skewX(-18deg); }
+      100% { transform: translateX(220%) skewX(-18deg); }
+    }
+    .login-hero {
+      background: #06080c;
+      isolation: isolate;
+    }
+    .login-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.85;
+    }
+    .login-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      will-change: transform;
+    }
+    .login-layer--photo {
+      z-index: 0;
+      background:
+        url("https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=1800&q=80") center 42% / cover no-repeat;
+    }
+    .login-layer--blueprint {
+      z-index: 1;
+      opacity: 0.4;
+      background-image:
+        linear-gradient(rgba(34, 211, 238, 0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(34, 211, 238, 0.07) 1px, transparent 1px),
+        linear-gradient(rgba(249, 115, 22, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(249, 115, 22, 0.04) 1px, transparent 1px);
+      background-size: 24px 24px, 24px 24px, 96px 96px, 96px 96px;
+      animation: blueprintPan 36s linear infinite;
+    }
+    .login-layer--shade {
+      z-index: 2;
+      background:
+        linear-gradient(100deg, rgba(6, 8, 12, 0.93) 0%, rgba(6, 8, 12, 0.78) 42%, rgba(6, 8, 12, 0.52) 100%),
+        radial-gradient(ellipse 80% 60% at 70% 80%, rgba(249, 115, 22, 0.12) 0%, transparent 55%);
+    }
+    .login-rig {
+      position: absolute;
+      right: -5%;
+      bottom: 12%;
+      width: min(72vw, 420px);
+      height: auto;
+      z-index: 2;
+      color: rgba(255, 255, 255, 0.55);
+      animation: rigDrive 14s ease-in-out infinite;
+      filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.45));
+    }
+    .login-rig svg { width: 100%; height: auto; display: block; }
+    .login-hero-road--scroll {
+      z-index: 3;
+      animation: roadScroll 2.8s linear infinite;
+    }
+    .login-hero-inner { z-index: 4; }
+    .login-hero::before { z-index: 5; }
+    .login-panel {
+      position: relative;
+      overflow: hidden;
+    }
+    .login-panel-blueprint {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.35;
+      background-image:
+        linear-gradient(rgba(34, 211, 238, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(34, 211, 238, 0.06) 1px, transparent 1px);
+      background-size: 32px 32px;
+      animation: blueprintPan 48s linear infinite reverse;
+    }
+    .login-panel-scrim {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(ellipse 90% 70% at 50% 40%, rgba(6, 8, 12, 0.35) 0%, rgba(6, 8, 12, 0.85) 100%);
+    }
+    .login-panel-inner { position: relative; z-index: 2; }
+    .login-glass {
+      background: rgba(10, 14, 22, 0.72) !important;
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      backdrop-filter: blur(18px) saturate(1.2);
+      box-shadow:
+        0 0 0 1px rgba(34, 211, 238, 0.08),
+        0 24px 64px -28px rgba(0, 0, 0, 0.75),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+    .login-field-wrap {
+      position: relative;
+      border-radius: 12px;
+      transition: transform 0.2s ease;
+    }
+    .login-field-wrap:focus-within {
+      transform: translateY(-1px);
+    }
+    .login-field-wrap::after {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      border-radius: 13px;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(34, 211, 238, 0.7), rgba(249, 115, 22, 0.45));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+    }
+    .login-field-wrap:focus-within::after { opacity: 1; }
+    .login-panel .login-field {
+      transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+    }
+    .login-panel .login-field:focus {
+      border-color: rgba(34, 211, 238, 0.55);
+      box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18), 0 8px 24px -12px rgba(34, 211, 238, 0.35);
+      background: rgba(8, 11, 18, 0.85);
+    }
+    .login-submit {
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s ease, box-shadow 0.25s ease, filter 0.2s ease;
+    }
+    .login-submit::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
+      transform: translateX(-120%) skewX(-18deg);
+      pointer-events: none;
+    }
+    .login-submit:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 32px -8px rgba(34, 211, 238, 0.45);
+      filter: brightness(1.05);
+    }
+    .login-submit:hover::after { animation: loginBtnShine 0.85s ease; }
+    .login-submit:active { transform: translateY(0) scale(0.985); }
+    html.reduce-motion .login-layer--blueprint,
+    html.reduce-motion .login-panel-blueprint,
+    html.reduce-motion .login-hero-road--scroll,
+    html.reduce-motion .login-rig { animation: none !important; }
+    html.reduce-motion .login-canvas { display: none; }
+    html.reduce-motion .login-field-wrap:focus-within { transform: none; }
+    html.reduce-motion .login-submit:hover { transform: none; }
   </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -698,12 +861,27 @@
   </div>
 
   <section id="login-view" class="login-shell">
-    <div class="login-hero" role="img" aria-label="Road construction and heavy machinery on site">
-      <div class="login-hero-road" aria-hidden="true"></div>
-      <div class="login-hero-inner">
-        <p class="login-hero-eyebrow">Fleet command · Drill &amp; plant ops</p>
+    <div id="login-hero" class="login-hero" role="img" aria-label="Heavy construction and trucking fleet on site">
+      <canvas id="login-canvas" class="login-canvas" aria-hidden="true" width="800" height="600"></canvas>
+      <div class="login-layer login-layer--photo" data-parallax="0.035" aria-hidden="true"></div>
+      <div class="login-layer login-layer--blueprint" data-parallax="0.02" aria-hidden="true"></div>
+      <div class="login-layer login-layer--shade" aria-hidden="true"></div>
+      <div class="login-rig" data-parallax="0.055" aria-hidden="true">
+        <svg viewBox="0 0 640 200" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <path d="M40 150h520v12H40z" opacity="0.35"/>
+          <path d="M80 130h220l28-44h72l20 44h100v20H80z" opacity="0.9"/>
+          <circle cx="140" cy="150" r="28" fill="none" stroke="currentColor" stroke-width="10" opacity="0.85"/>
+          <circle cx="380" cy="150" r="28" fill="none" stroke="currentColor" stroke-width="10" opacity="0.85"/>
+          <circle cx="500" cy="150" r="22" fill="none" stroke="currentColor" stroke-width="8" opacity="0.7"/>
+          <path d="M120 96h48v34h-48z" opacity="0.55"/>
+          <path d="M300 86h90v10H300zM310 76h70v10h-70z" opacity="0.4"/>
+        </svg>
+      </div>
+      <div class="login-hero-road login-hero-road--scroll" aria-hidden="true"></div>
+      <div class="login-hero-inner" data-parallax="0.012">
+        <p class="login-hero-eyebrow">Heavy construction · Trucking fleet</p>
         <h2 class="login-hero-title serif">Monitor every asset on site</h2>
-        <p class="login-hero-copy">Mining-style fleet visibility for breakdowns—real-time status, SLA alerts, spares flow, and close-out records in one command view.</p>
+        <p class="login-hero-copy">Live fleet visibility for breakdowns—status, SLA alerts, spares flow, and close-out records in one command view.</p>
         <ul class="login-hero-points" aria-label="Capabilities">
           <li>Live fleet health &amp; downtime clocks</li>
           <li>Stage KPIs with SLA breach highlighting</li>
@@ -712,6 +890,8 @@
       </div>
     </div>
     <div class="login-panel">
+      <div class="login-panel-blueprint" aria-hidden="true"></div>
+      <div class="login-panel-scrim" aria-hidden="true"></div>
       <div class="login-panel-inner">
         <div class="text-center mb-6">
           <span class="login-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17h16v2H4z"/><path d="M7 17V9l5-3 5 3v8"/><path d="M9.5 12h5"/><path d="M3 8h4l1.5-3h7L17 8"/></svg></span>
@@ -719,11 +899,15 @@
           <p class="text-sm mt-1" style="color: var(--muted);">SiteGuard breakdown tracker</p>
           <p class="text-xs mt-2 industrial" style="color: var(--muted); opacity: 0.85;">Build {{SITEGUARD_BUILD}}</p>
         </div>
-        <form id="form-login" class="card p-6 space-y-3">
-          <input id="login-username" type="text" autocomplete="username" autocapitalize="none" placeholder="Username" required class="field" />
-          <input id="login-password" type="password" autocomplete="current-password" placeholder="Password" required class="field" />
-          <div id="login-error" class="hidden text-sm font-medium" style="color:#be123c;"></div>
-          <button type="submit" class="btn btn-primary" style="padding:.8rem 1rem;">Log in</button>
+        <form id="form-login" class="login-glass card p-6 space-y-3">
+          <div class="login-field-wrap">
+            <input id="login-username" type="text" autocomplete="username" autocapitalize="none" placeholder="Username" required class="field login-field" />
+          </div>
+          <div class="login-field-wrap">
+            <input id="login-password" type="password" autocomplete="current-password" placeholder="Password" required class="field login-field" />
+          </div>
+          <div id="login-error" class="hidden text-sm font-medium" style="color:#fb7185;"></div>
+          <button type="submit" class="btn btn-primary login-submit" style="padding:.8rem 1rem;">Log in</button>
         </form>
       </div>
     </div>
@@ -1128,9 +1312,116 @@
     }
 
     // ========================================================================
+    // Login motion (canvas dust, parallax) — paused when tab hidden or after sign-in
+    // ========================================================================
+    const loginFx = { raf: 0, ro: null, onVis: null, onMove: null, parts: [] };
+
+    function stopLoginFx() {
+      if (loginFx.raf) cancelAnimationFrame(loginFx.raf);
+      loginFx.raf = 0;
+      if (loginFx.ro) {
+        loginFx.ro.disconnect();
+        loginFx.ro = null;
+      }
+      if (loginFx.onVis) {
+        document.removeEventListener("visibilitychange", loginFx.onVis);
+        loginFx.onVis = null;
+      }
+      const shell = $("login-view");
+      if (shell && loginFx.onMove) shell.removeEventListener("pointermove", loginFx.onMove);
+      loginFx.onMove = null;
+      loginFx.parts = [];
+      $("login-hero")?.querySelectorAll("[data-parallax]").forEach((el) => { el.style.transform = ""; });
+    }
+
+    function initLoginFx() {
+      stopLoginFx();
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce) {
+        document.documentElement.classList.add("reduce-motion");
+        return;
+      }
+      document.documentElement.classList.remove("reduce-motion");
+      const hero = $("login-hero");
+      const shell = $("login-view");
+      const canvas = $("login-canvas");
+      if (!hero || !shell || !canvas) return;
+
+      const layers = hero.querySelectorAll("[data-parallax]");
+      loginFx.onMove = (e) => {
+        const r = shell.getBoundingClientRect();
+        if (!r.width) return;
+        const x = (e.clientX - r.left) / r.width - 0.5;
+        const y = (e.clientY - r.top) / r.height - 0.5;
+        layers.forEach((el) => {
+          const k = parseFloat(el.getAttribute("data-parallax")) || 0.03;
+          el.style.transform = `translate3d(${x * k * 72}px, ${y * k * 72}px, 0)`;
+        });
+      };
+      shell.addEventListener("pointermove", loginFx.onMove, { passive: true });
+
+      const ctx = canvas.getContext("2d", { alpha: true });
+      const dustColors = ["rgba(34,211,238,", "rgba(249,115,22,", "rgba(190,200,210,"];
+      const count = window.innerWidth < 480 ? 26 : 38;
+
+      const resize = () => {
+        const r = hero.getBoundingClientRect();
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.max(1, Math.floor(r.width * dpr));
+        canvas.height = Math.max(1, Math.floor(r.height * dpr));
+        canvas.style.width = `${r.width}px`;
+        canvas.style.height = `${r.height}px`;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        if (!loginFx.parts.length) {
+          loginFx.parts = Array.from({ length: count }, () => ({
+            x: Math.random() * r.width,
+            y: Math.random() * r.height,
+            vx: (Math.random() - 0.5) * 0.32,
+            vy: Math.random() * 0.22 + 0.06,
+            r: Math.random() * 2 + 0.5,
+            c: dustColors[Math.floor(Math.random() * dustColors.length)],
+            a: (Math.random() * 0.32 + 0.12).toFixed(2),
+          }));
+        }
+      };
+      resize();
+      loginFx.ro = new ResizeObserver(resize);
+      loginFx.ro.observe(hero);
+
+      let paused = false;
+      loginFx.onVis = () => { paused = document.hidden; };
+      document.addEventListener("visibilitychange", loginFx.onVis);
+
+      const tick = () => {
+        loginFx.raf = requestAnimationFrame(tick);
+        if (paused || shell.classList.contains("hidden")) return;
+        const w = hero.clientWidth;
+        const h = hero.clientHeight;
+        if (w < 2 || h < 2) return;
+        ctx.clearRect(0, 0, w, h);
+        for (const p of loginFx.parts) {
+          p.x += p.vx;
+          p.y += p.vy;
+          if (p.y > h + 6) {
+            p.y = -4;
+            p.x = Math.random() * w;
+          }
+          if (p.x < -6) p.x = w + 4;
+          if (p.x > w + 6) p.x = -4;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = `${p.c}${p.a})`;
+          ctx.fill();
+        }
+      };
+      loginFx.raf = requestAnimationFrame(tick);
+    }
+
+    // ========================================================================
     // Session
     // ========================================================================
     function showLogin() {
+      stopLoginFx();
       localStorage.removeItem(TOKEN_KEY);
       state.me = null;
       state.lastServerSignature = "";
@@ -1140,8 +1431,10 @@
       $("login-view").classList.remove("hidden");
       document.body.classList.remove("signed-in");
       ["main-wrapper", "main-nav", "user-bar", "fleet-strip"].forEach((id) => $(id).classList.add("hidden"));
+      initLoginFx();
     }
     async function startSession() {
+      stopLoginFx();
       await loadAll();
       const views = viewsFor(state.me.role);
       state.activeView = views.includes("tasks") ? "tasks" : views[0];

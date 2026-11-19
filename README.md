@@ -82,6 +82,7 @@ default 330 = IST) when one is entered. Alerts (WhatsApp/email) are not built ye
 2. Push this folder to GitHub.
 3. On [Render](https://render.com): **New + -> Blueprint** -> select the repo -> paste the Neon string into `DATABASE_URL`
    and set `DEMO_PASSWORD` -> **Apply**.
+   The build downloads the login hero video into `static/media/login-hero.mp4` (see `scripts/fetch_login_hero.sh`). If you deploy without Blueprint, set build to: `bash scripts/fetch_login_hero.sh && pip install -r requirements.txt`.
 4. Open the Render URL on a phone.
 
 **Redeploying over the previous (SOP) version** needs no reset: the new `ticket_files` table and `invoice_number` column are added automatically.

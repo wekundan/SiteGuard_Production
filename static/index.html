@@ -1177,13 +1177,11 @@
         muted
         loop
         playsinline
-        preload="metadata"
+        preload="auto"
+        src="/static/media/login-hero.mp4"
         poster="https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=1800&q=80"
         aria-hidden="true"
-      >
-        <source src="https://videos.pexels.com/video-files/3209624/3209624-hd_1920_1080_30fps.mp4" type="video/mp4" media="(min-width: 768px)" />
-        <source src="https://videos.pexels.com/video-files/3209624/3209624-sd_960_540_30fps.mp4" type="video/mp4" />
-      </video>
+      ></video>
       <div class="login-layer login-layer--photo" data-parallax="0.035" aria-hidden="true"></div>
       <div class="login-layer login-layer--blueprint" data-parallax="0.02" aria-hidden="true"></div>
       <div class="login-layer login-layer--shade" aria-hidden="true"></div>
@@ -1687,6 +1685,12 @@
       if (vidOff) vidOff.pause();
     }
 
+    const LOGIN_HERO_VIDEO_URLS = [
+      "/static/media/login-hero.mp4",
+      "https://assets.mixkit.co/videos/preview/mixkit-excavators-working-on-a-construction-site-4455-hd-ready.mp4",
+      "https://assets.mixkit.co/videos/preview/mixkit-busy-construction-site-4363-hd-ready.mp4",
+    ];
+
     function initLoginHeroVideo() {
       const hero = $("login-hero");
       const vid = $("login-hero-video");
@@ -1694,12 +1698,36 @@
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const saveData = navigator.connection?.saveData;
       const forcePoster = reduce || saveData;
-      hero.classList.toggle("login-hero--no-video", forcePoster);
+      hero.classList.remove("login-hero--no-video");
       if (forcePoster) {
+        hero.classList.add("login-hero--no-video");
         vid.pause();
+        vid.removeAttribute("src");
         return;
       }
-      vid.play().catch(() => hero.classList.add("login-hero--no-video"));
+      vid.muted = true;
+      vid.defaultMuted = true;
+      vid.setAttribute("playsinline", "");
+      vid.onerror = null;
+      vid.onloadeddata = null;
+      let idx = 0;
+      const trySource = () => {
+        if (idx >= LOGIN_HERO_VIDEO_URLS.length) {
+          hero.classList.add("login-hero--no-video");
+          return;
+        }
+        const url = LOGIN_HERO_VIDEO_URLS[idx++];
+        vid.src = url;
+        vid.load();
+      };
+      vid.onerror = () => trySource();
+      vid.onloadeddata = () => {
+        vid.play().catch(() => {
+          if (idx < LOGIN_HERO_VIDEO_URLS.length) trySource();
+          else hero.classList.add("login-hero--no-video");
+        });
+      };
+      trySource();
     }
 
     function initLoginFx() {

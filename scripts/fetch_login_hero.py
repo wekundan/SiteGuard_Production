@@ -22,12 +22,13 @@ HEADERS = {
 }
 
 # Pexels first (construction / heavy equipment); Mixkit often 403 on build hosts.
+# Excavators, dump trucks, roadwork only (verify IDs on pexels.com/video/* before changing).
 SOURCES = (
-    # Construction / heavy equipment (Pexels)
-    "https://videos.pexels.com/video-files/2098989/2098989-hd_1920_1080_30fps.mp4",
-    "https://videos.pexels.com/video-files/2098989/2098989-sd_640_360_25fps.mp4",
-    "https://videos.pexels.com/video-files/2505684/2505684-hd_1920_1080_30fps.mp4",
-    "https://videos.pexels.com/video-files/1289667/1289667-hd_1920_1080_24fps.mp4",
+    "https://videos.pexels.com/video-files/36298168/36298168-hd_1920_1080_30fps.mp4",
+    "https://videos.pexels.com/video-files/35649973/35649973-hd_1920_1080_50fps.mp4",
+    "https://videos.pexels.com/video-files/35650014/35650014-hd_1920_1080_50fps.mp4",
+    "https://videos.pexels.com/video-files/30331567/30331567-hd_1920_1080_30fps.mp4",
+    "https://videos.pexels.com/video-files/3209624/3209624-hd_1920_1080_30fps.mp4",
     "https://videos.pexels.com/video-files/3209624/3209624-sd_960_540_30fps.mp4",
 )
 
@@ -45,9 +46,6 @@ def fetch(url: str) -> int:
 
 
 def main() -> int:
-    if os.path.isfile(DEST) and os.path.getsize(DEST) >= MIN_BYTES:
-        print(f"Keeping existing {DEST} ({os.path.getsize(DEST)} bytes)")
-        return 0
     last: Exception | None = None
     for url in SOURCES:
         try:
@@ -57,9 +55,15 @@ def main() -> int:
         except (urllib.error.URLError, urllib.error.HTTPError, ValueError, TimeoutError) as e:
             last = e
             print(f"skip {url}: {e}", file=sys.stderr)
+    if os.path.isfile(DEST):
+        try:
+            os.remove(DEST)
+            print(f"Removed stale {DEST}; browser will use construction CDN fallbacks.", file=sys.stderr)
+        except OSError as e:
+            print(f"Could not remove stale hero video: {e}", file=sys.stderr)
     print(
         "WARN: could not fetch login-hero.mp4 on build host (CDN may block datacenter IPs). "
-        "Deploy will continue; browsers use /static URL then Pexels fallbacks.",
+        "Deploy will continue; browsers use Pexels construction fallbacks.",
         file=sys.stderr,
     )
     if last:

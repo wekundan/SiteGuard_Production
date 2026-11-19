@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#12151a" />
+  <meta name="theme-color" content="#06080c" />
   <title>SiteGuard — Breakdown Tracker</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=IBM+Plex+Mono:wght@500;600&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <style>
     :root {
@@ -33,6 +33,11 @@
       --site-tex: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cpath stroke='%2312151a' stroke-opacity='0.035' stroke-width='1' d='M0 40h80M40 0v80'/%3E%3C/svg%3E");
       --grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
       --header-photo: url("https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=900&q=75");
+      --fleet-cyan: #22d3ee;
+      --fleet-cyan-dim: #0891b2;
+      --fleet-surface: rgba(14, 19, 28, 0.78);
+      --fleet-border: rgba(255, 255, 255, 0.09);
+      --fleet-glow: 0 0 32px rgba(34, 211, 238, 0.12);
     }
     body {
       font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
@@ -46,34 +51,229 @@
       background-size: auto, 200px 200px, 80px 80px;
     }
     body.signed-in {
-      background-color: #e6e9ee;
+      --ink: #e8ecf3;
+      --muted: #8b95a8;
+      --line: rgba(255, 255, 255, 0.1);
+      --navy: #eef2f8;
+      --accent: var(--fleet-cyan);
+      --accent-dark: var(--fleet-cyan-dim);
+      --warn: #fbbf24;
+      color: var(--ink);
+      background-color: #06080c;
       background-image:
-        radial-gradient(ellipse 90% 55% at 100% 0%, rgba(249, 115, 22, 0.11) 0%, transparent 58%),
-        radial-gradient(ellipse 70% 50% at 0% 100%, rgba(18, 21, 26, 0.06) 0%, transparent 52%),
-        repeating-linear-gradient(
-          -45deg,
-          rgba(249, 115, 22, 0.055) 0 10px,
-          transparent 10px 22px
-        ),
-        repeating-linear-gradient(
-          90deg,
-          rgba(18, 21, 26, 0.04) 0 1px,
-          transparent 1px 24px
-        ),
-        repeating-linear-gradient(
-          0deg,
-          rgba(18, 21, 26, 0.03) 0 1px,
-          transparent 1px 24px
-        ),
-        repeating-linear-gradient(
-          90deg,
-          transparent 0 20px,
-          rgba(255, 255, 255, 0.55) 20px 22px,
-          transparent 22px 42px
-        ),
+        radial-gradient(ellipse 70% 50% at 15% -5%, rgba(34, 211, 238, 0.14) 0%, transparent 55%),
+        radial-gradient(ellipse 55% 45% at 100% 20%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse 60% 40% at 50% 100%, rgba(15, 23, 42, 0.9) 0%, transparent 70%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cpath fill='none' stroke='%2322d3ee' stroke-opacity='0.06' stroke-width='0.75' d='M0 60 Q30 40 60 60 T120 60 M0 30 Q40 50 80 30 M20 90 Q50 70 100 90'/%3E%3C/svg%3E"),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0 1px, transparent 1px 48px),
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0 1px, transparent 1px 48px),
         var(--grain);
-      background-size: auto, auto, 32px 32px, 24px 24px, 24px 24px, 42px 100%, 200px 200px;
+      background-size: auto, auto, auto, 120px 120px, 48px 48px, 48px 48px, 200px 200px;
       background-attachment: fixed;
+    }
+    body.signed-in .card {
+      background: var(--fleet-surface);
+      border-color: var(--fleet-border);
+      box-shadow: var(--fleet-glow), 0 20px 50px -30px rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(14px);
+    }
+    body.signed-in .card.overdue {
+      border-color: rgba(251, 113, 133, 0.45);
+      box-shadow: 0 0 28px rgba(244, 63, 94, 0.12), 0 20px 50px -30px rgba(0, 0, 0, 0.65);
+    }
+    body.signed-in .field {
+      background: rgba(8, 11, 18, 0.65);
+      border-color: rgba(255, 255, 255, 0.12);
+      color: var(--ink);
+    }
+    body.signed-in .field::placeholder { color: #6b7280; }
+    body.signed-in .field:focus {
+      border-color: var(--fleet-cyan);
+      box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2);
+    }
+    body.signed-in .btn-primary {
+      background: linear-gradient(135deg, #22d3ee 0%, #0891b2 100%);
+      color: #041016;
+      font-weight: 700;
+    }
+    body.signed-in .btn-primary:hover { filter: brightness(1.06); }
+    body.signed-in .btn-outline {
+      background: rgba(8, 11, 18, 0.5);
+      color: var(--ink);
+      border-color: var(--fleet-border);
+    }
+    body.signed-in .btn-outline:hover { background: rgba(34, 211, 238, 0.08); border-color: rgba(34, 211, 238, 0.35); }
+    body.signed-in .tl::before { background: rgba(255, 255, 255, 0.12); }
+    body.signed-in .tl-dot { box-shadow: 0 0 0 4px rgba(14, 19, 28, 0.95); }
+    body.signed-in .tl-card { background: rgba(10, 14, 22, 0.85); border-color: var(--fleet-border); }
+    body.signed-in .now-card { background: rgba(34, 211, 238, 0.06); border-color: rgba(34, 211, 238, 0.22); }
+    body.signed-in .hist-tools button { background: rgba(8, 11, 18, 0.6); border-color: var(--fleet-border); color: var(--muted); }
+    body.signed-in .remark-composer { background: rgba(8, 11, 18, 0.55); border-color: var(--fleet-border); }
+    body.signed-in .remark-bubble { background: rgba(34, 211, 238, 0.12); color: var(--ink); }
+    body.signed-in .remark-composer-bar { background: rgba(8, 11, 18, 0.45); border-color: var(--fleet-border); }
+    body.signed-in .progress i { background: rgba(255, 255, 255, 0.1); }
+    body.signed-in .progress i.cur { background: var(--fleet-cyan); box-shadow: 0 0 10px rgba(34, 211, 238, 0.5); }
+    body.signed-in .progress i.done { background: #2dd4bf; }
+    body.signed-in .app-header {
+      background: linear-gradient(105deg, rgba(12, 16, 24, 0.98) 0%, rgba(8, 10, 16, 0.97) 100%);
+      border-bottom: 1px solid rgba(34, 211, 238, 0.35);
+      box-shadow: 0 12px 40px -16px rgba(0, 0, 0, 0.7);
+    }
+    body.signed-in .app-header::after { opacity: 0; }
+    body.signed-in .app-header::before {
+      background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.5), transparent);
+      opacity: 0.55;
+      height: 1px;
+      bottom: 0;
+    }
+    body.signed-in .brand-mark {
+      background: linear-gradient(145deg, #22d3ee 0%, #0e7490 100%);
+      color: #041016;
+      box-shadow: 0 0 20px rgba(34, 211, 238, 0.35);
+    }
+    body.signed-in .brand-tagline { color: #6b8a9a; }
+    body.signed-in #main-nav {
+      background: transparent;
+      border: none;
+      padding: 0 0 0.65rem;
+    }
+    body.signed-in #nav-tabs {
+      gap: 0.3rem;
+      padding: 0.35rem;
+      margin: 0 1rem;
+      max-width: 56rem;
+      background: rgba(6, 8, 12, 0.55);
+      border: 1px solid var(--fleet-border);
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+    }
+    body.signed-in .tab {
+      border: 1px solid transparent;
+      border-radius: 9px;
+      border-bottom: none;
+      color: #7d8799;
+      padding: 0.65rem 0.5rem;
+    }
+    body.signed-in .tab:hover { color: #e8ecf3; background: rgba(255, 255, 255, 0.04); }
+    body.signed-in .tab.active {
+      color: #fff;
+      background: linear-gradient(135deg, rgba(34, 211, 238, 0.18) 0%, rgba(6, 182, 212, 0.06) 100%);
+      border-color: rgba(34, 211, 238, 0.35);
+      box-shadow: 0 0 24px rgba(34, 211, 238, 0.12);
+    }
+    body.signed-in .count { background: var(--fleet-cyan); color: #041016; border-radius: 6px; }
+    body.signed-in .header-photo {
+      background-image: url("https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=900&q=75");
+      opacity: 0.35;
+    }
+    body.signed-in .header-mesh {
+      background:
+        repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(34, 211, 238, 0.03) 23px, rgba(34, 211, 238, 0.03) 24px),
+        linear-gradient(100deg, rgba(6, 8, 12, 0.96) 0%, rgba(6, 8, 12, 0.7) 55%, rgba(6, 8, 12, 0.2) 100%);
+    }
+    body.signed-in .header-rail {
+      background: repeating-linear-gradient(90deg, rgba(34, 211, 238, 0.55) 0 12px, transparent 12px 24px);
+      opacity: 0.5;
+    }
+
+    /* fleet command strip (post-login) */
+    .fleet-strip {
+      position: sticky;
+      top: calc(var(--header-stack, 0px));
+      z-index: 25;
+      border-bottom: 1px solid rgba(34, 211, 238, 0.12);
+      background: linear-gradient(180deg, rgba(10, 14, 22, 0.92) 0%, rgba(8, 10, 16, 0.75) 100%);
+      backdrop-filter: blur(12px);
+    }
+    .fleet-strip-inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.65rem 1rem;
+    }
+    .fleet-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #5eead4;
+    }
+    .fleet-live i {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #2dd4bf;
+      box-shadow: 0 0 10px #2dd4bf;
+      animation: fleetPulse 2s ease-in-out infinite;
+    }
+    @keyframes fleetPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.55; transform: scale(0.92); }
+    }
+    .fleet-stats {
+      flex: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      justify-content: flex-end;
+    }
+    .fleet-stat {
+      min-width: 5.5rem;
+      padding: 0.35rem 0.65rem;
+      border-radius: 8px;
+      border: 1px solid var(--fleet-border);
+      background: rgba(8, 11, 18, 0.55);
+    }
+    .fleet-stat-val {
+      display: block;
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #e8ecf3;
+      line-height: 1.2;
+    }
+    .fleet-stat-lbl {
+      display: block;
+      font-size: 0.62rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #7a8499;
+      margin-top: 0.1rem;
+    }
+    .fleet-stat--bad .fleet-stat-val { color: #fb7185; }
+    .fleet-stat--bad { border-color: rgba(251, 113, 133, 0.35); box-shadow: 0 0 18px rgba(244, 63, 94, 0.08); }
+    .fleet-stat--warn .fleet-stat-val { color: #fbbf24; }
+    .fleet-stat--ok .fleet-stat-val { color: #5eead4; }
+
+    .kpi-tile {
+      position: relative;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+    .kpi-tile::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--kpi-accent, var(--fleet-cyan));
+      box-shadow: 0 0 16px var(--kpi-accent, var(--fleet-cyan));
+    }
+    .kpi-tile .kpi-value {
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    body.signed-in #main-wrapper { max-width: 56rem; }
+    body.signed-in .login-shell { display: none; }
+    body.signed-in #toast-box {
+      background: rgba(14, 19, 28, 0.95);
+      border: 1px solid rgba(34, 211, 238, 0.25);
+      color: #e8ecf3;
     }
     .serif { font-family: 'Oswald', 'Barlow Condensed', sans-serif; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
     .industrial { font-family: 'Barlow Condensed', 'DM Sans', sans-serif; letter-spacing: 0.06em; text-transform: uppercase; }
@@ -205,7 +405,10 @@
     .upload-done { display: flex; gap: .6rem; align-items: center; padding: .7rem .8rem; border-radius: 12px; background: #eef8f4; border: 1px solid #b9e0d2; }
     .remark-bubble.sending { opacity: .6; }
     .remark-bubble.sending::after { content: " · sending…"; font-size: .7rem; color: var(--muted); }
-    @media (prefers-reduced-motion: reduce) { .card.flash, .pop, .card.done.enter, .spin { animation: none; } .card.done { transition: none; } }
+    @media (prefers-reduced-motion: reduce) {
+      .card.flash, .pop, .card.done.enter, .spin, .fleet-live i { animation: none; }
+      .card.done { transition: none; }
+    }
 
     /* ---- brand shell: header + login hero (road-construction corporate) ---- */
     .app-header {
@@ -325,8 +528,8 @@
       min-height: 220px;
       overflow: hidden;
       background:
-        linear-gradient(100deg, rgba(18, 21, 26, 0.94) 0%, rgba(18, 21, 26, 0.72) 42%, rgba(18, 21, 26, 0.55) 100%),
-        url("https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=1800&q=80") center 55% / cover no-repeat;
+        linear-gradient(100deg, rgba(6, 8, 12, 0.96) 0%, rgba(6, 8, 12, 0.72) 45%, rgba(6, 8, 12, 0.45) 100%),
+        url("https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=1800&q=80") center 45% / cover no-repeat;
     }
     .login-hero::before {
       content: "";
@@ -335,7 +538,7 @@
       top: 0;
       bottom: 0;
       width: 6px;
-      background: var(--accent);
+      background: linear-gradient(180deg, #22d3ee 0%, #0891b2 100%);
       z-index: 2;
     }
     .login-hero-road {
@@ -379,7 +582,7 @@
       font-weight: 700;
       letter-spacing: 0.18em;
       text-transform: uppercase;
-      color: var(--accent);
+      color: #22d3ee;
     }
     .login-hero-title { font-size: clamp(1.85rem, 4.5vw, 2.75rem); line-height: 1.05; color: #fff; max-width: 16ch; }
     .login-hero-copy { font-size: 0.95rem; line-height: 1.55; color: #b8bfc9; max-width: 24rem; font-weight: 500; }
@@ -404,7 +607,8 @@
       width: 8px;
       height: 8px;
       border-radius: 1px;
-      background: var(--accent);
+      background: #22d3ee;
+      box-shadow: 0 0 8px rgba(34, 211, 238, 0.45);
       flex-shrink: 0;
     }
     .login-panel {
@@ -412,11 +616,27 @@
       align-items: center;
       justify-content: center;
       padding: 2rem 1.25rem 2.5rem;
-      background: #fff;
-      border-top: 4px solid var(--accent);
+      background: linear-gradient(180deg, rgba(10, 14, 22, 0.98) 0%, rgba(6, 8, 12, 1) 100%);
+      border-top: 1px solid rgba(34, 211, 238, 0.25);
     }
     @media (min-width: 768px) {
-      .login-panel { padding: 2.5rem; border-top: none; border-left: 1px solid var(--line); box-shadow: -24px 0 48px -32px rgba(18, 21, 26, 0.15); }
+      .login-panel { padding: 2.5rem; border-top: none; border-left: 1px solid rgba(255, 255, 255, 0.08); box-shadow: -24px 0 48px -32px rgba(0, 0, 0, 0.45); }
+    }
+    .login-panel .card {
+      background: rgba(14, 19, 28, 0.88);
+      border-color: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(12px);
+    }
+    .login-panel .field {
+      background: rgba(6, 8, 12, 0.65);
+      border-color: rgba(255, 255, 255, 0.12);
+      color: #e8ecf3;
+    }
+    .login-panel h1 { color: #eef2f8 !important; }
+    .login-panel .text-sm { color: #8b95a8 !important; }
+    .login-panel .btn-primary {
+      background: linear-gradient(135deg, #22d3ee 0%, #0891b2 100%);
+      color: #041016;
     }
     .login-panel-inner { width: 100%; max-width: 22rem; }
     .login-mark {
@@ -426,9 +646,10 @@
       border-radius: 4px;
       align-items: center;
       justify-content: center;
-      background: var(--navy);
-      color: var(--accent);
-      box-shadow: 0 8px 24px -10px rgba(18, 21, 26, 0.45);
+      background: rgba(6, 8, 12, 0.9);
+      color: #22d3ee;
+      border: 1px solid rgba(34, 211, 238, 0.35);
+      box-shadow: 0 0 24px rgba(34, 211, 238, 0.15);
     }
     .login-mark svg { width: 1.65rem; height: 1.65rem; }
   </style>
@@ -446,7 +667,7 @@
         <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17h16v2H4z"/><path d="M7 17V9l5-3 5 3v8"/><path d="M9.5 12h5"/><path d="M3 8h4l1.5-3h7L17 8"/></svg></span>
         <div class="min-w-0">
           <span class="serif brand-name">SiteGuard</span>
-          <span class="brand-tagline">Road fleet · Breakdown ops</span>
+          <span class="brand-tagline">AI fleet monitoring · Breakdown command</span>
         </div>
       </div>
       <div id="user-bar" class="hidden flex items-center min-w-0 w-full sm:w-auto sm:max-w-[min(100%,20rem)] gap-2">
@@ -462,6 +683,13 @@
     </nav>
   </header>
 
+  <div id="fleet-strip" class="fleet-strip hidden" aria-label="Live fleet overview">
+    <div class="max-w-4xl mx-auto px-4 sm:px-5 fleet-strip-inner">
+      <span class="fleet-live industrial"><i aria-hidden="true"></i> Live fleet</span>
+      <div id="fleet-strip-stats" class="fleet-stats"></div>
+    </div>
+  </div>
+
   <div id="toast-container" class="hidden fixed bottom-5 inset-x-0 z-40 px-4 pointer-events-none">
     <div id="toast-box" class="pointer-events-auto max-w-md mx-auto flex items-center justify-between gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-medium">
       <span id="toast-message"></span>
@@ -473,13 +701,13 @@
     <div class="login-hero" role="img" aria-label="Road construction and heavy machinery on site">
       <div class="login-hero-road" aria-hidden="true"></div>
       <div class="login-hero-inner">
-        <p class="login-hero-eyebrow">Site operations · Road &amp; plant fleet</p>
-        <h2 class="login-hero-title serif">Keep every machine on the road</h2>
-        <p class="login-hero-copy">One place to run inspections, spares, vendors, and workshop repairs—from breakdown report to close-out.</p>
+        <p class="login-hero-eyebrow">Fleet command · Drill &amp; plant ops</p>
+        <h2 class="login-hero-title serif">Monitor every asset on site</h2>
+        <p class="login-hero-copy">Mining-style fleet visibility for breakdowns—real-time status, SLA alerts, spares flow, and close-out records in one command view.</p>
         <ul class="login-hero-points" aria-label="Capabilities">
-          <li>Live status across site, stores &amp; vendors</li>
-          <li>Spares, quotation &amp; approval in one flow</li>
-          <li>Management dashboard &amp; SLA visibility</li>
+          <li>Live fleet health &amp; downtime clocks</li>
+          <li>Stage KPIs with SLA breach highlighting</li>
+          <li>Board history &amp; CSV exports for audits</li>
         </ul>
       </div>
     </div>
@@ -911,7 +1139,7 @@
         openHistory: {}, history: {}, issuesOnly: {}, collapsed: {}, expandedNotes: {}, openMachine: {}, reportAck: null, tickets: [], metrics: null });
       $("login-view").classList.remove("hidden");
       document.body.classList.remove("signed-in");
-      ["main-wrapper", "main-nav", "user-bar"].forEach((id) => $(id).classList.add("hidden"));
+      ["main-wrapper", "main-nav", "user-bar", "fleet-strip"].forEach((id) => $(id).classList.add("hidden"));
     }
     async function startSession() {
       await loadAll();
@@ -919,7 +1147,7 @@
       state.activeView = views.includes("tasks") ? "tasks" : views[0];
       $("login-view").classList.add("hidden");
       document.body.classList.add("signed-in");
-      ["main-wrapper", "main-nav", "user-bar"].forEach((id) => $(id).classList.remove("hidden"));
+      ["main-wrapper", "main-nav", "user-bar", "fleet-strip"].forEach((id) => $(id).classList.remove("hidden"));
       $("user-label").textContent = state.me.name;
       $("btn-reset-demo").classList.toggle("hidden", state.me.role !== "management");
       renderAll();
@@ -953,6 +1181,27 @@
       if (state.activeView === "tasks") renderTasks();
       if (state.activeView === "board") renderBoard();
       if (state.activeView === "dashboard") renderDashboard();
+      renderFleetStrip();
+    }
+
+    function renderFleetStrip() {
+      const el = $("fleet-strip-stats");
+      if (!el || !state.me) return;
+      const broken = state.machines.filter((m) => m.status === "broken_down").length;
+      const open = state.tickets.filter((t) => t.status !== "closed").length;
+      const overdue = state.tickets.filter((t) => t.is_overdue && t.status !== "closed").length;
+      const active = Math.max(0, state.machines.length - broken);
+      const sla = state.metrics
+        ? Object.values(state.metrics.overdue_by_stage || {}).reduce((a, b) => a + b, 0)
+        : overdue;
+      const stats = [
+        { l: "Fleet active", v: `${active}/${state.machines.length}`, tone: active === state.machines.length ? "ok" : "warn" },
+        { l: "Machines down", v: String(broken), tone: broken ? "bad" : "ok" },
+        { l: "Open cases", v: String(open), tone: open ? "warn" : "ok" },
+        { l: "Past SLA", v: String(sla), tone: sla ? "bad" : "ok" },
+      ];
+      el.innerHTML = stats.map((s) =>
+        `<div class="fleet-stat fleet-stat--${s.tone}"><span class="fleet-stat-val">${esc(s.v)}</span><span class="fleet-stat-lbl">${s.l}</span></div>`).join("");
     }
 
     function renderReport() {
@@ -1535,16 +1784,16 @@
       const mt = state.metrics;
       if (!mt) return;
       const pastSla = Object.values(mt.overdue_by_stage).reduce((a, b) => a + b, 0);
-      const kpi = (label, value, color, sub = "") =>
-        `<div class="card p-4">
+      const kpi = (label, value, accent, sub = "") =>
+        `<div class="card kpi-tile p-4" style="--kpi-accent:${accent};">
           <div class="label">${label}</div>
-          <div class="serif text-[28px] leading-tight mt-1.5" style="color:${color};">${value}</div>
+          <div class="kpi-value serif text-[28px] leading-tight mt-1.5" style="color:${accent};">${value}</div>
           <div class="text-xs mt-0.5" style="color:var(--muted);">${sub || "&nbsp;"}</div></div>`;
       $("kpi-row").innerHTML =
-        kpi("Machines down", mt.total_machines_broken, "#be123c", `of ${state.machines.length}`) +
-        kpi("Past SLA", pastSla, pastSla ? "#be123c" : "#0b6b52", pastSla ? "needs attention" : "all on track") +
-        kpi("Avg downtime", mt.average_downtime_hours == null ? "—" : formatDuration(mt.average_downtime_hours), "var(--navy)", `${mt.cleared_tickets} cleared`) +
-        kpi("Repair cost", inr(mt.total_repair_cost), "var(--navy)", `${mt.closed_tickets} closed`);
+        kpi("Machines down", mt.total_machines_broken, "#fb7185", `of ${state.machines.length} in fleet`) +
+        kpi("Past SLA", pastSla, pastSla ? "#fb7185" : "#2dd4bf", pastSla ? "needs attention" : "all on track") +
+        kpi("Avg downtime", mt.average_downtime_hours == null ? "—" : formatDuration(mt.average_downtime_hours), "#22d3ee", `${mt.cleared_tickets} cleared`) +
+        kpi("Repair cost", inr(mt.total_repair_cost), "#a5b4fc", `${mt.closed_tickets} closed`);
       $("stage-table").innerHTML = STAGE_ORDER.map((s) => {
         const over = mt.overdue_by_stage[s] || 0;
         const avg = mt.stage_average_hours[s];

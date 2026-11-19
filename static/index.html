@@ -32,6 +32,7 @@
       );
       --site-tex: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cpath stroke='%2312151a' stroke-opacity='0.035' stroke-width='1' d='M0 40h80M40 0v80'/%3E%3C/svg%3E");
       --grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      --header-photo: url("https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=900&q=75");
     }
     body {
       font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
@@ -43,6 +44,36 @@
         var(--grain),
         var(--site-tex);
       background-size: auto, 200px 200px, 80px 80px;
+    }
+    body.signed-in {
+      background-color: #e6e9ee;
+      background-image:
+        radial-gradient(ellipse 90% 55% at 100% 0%, rgba(249, 115, 22, 0.11) 0%, transparent 58%),
+        radial-gradient(ellipse 70% 50% at 0% 100%, rgba(18, 21, 26, 0.06) 0%, transparent 52%),
+        repeating-linear-gradient(
+          -45deg,
+          rgba(249, 115, 22, 0.055) 0 10px,
+          transparent 10px 22px
+        ),
+        repeating-linear-gradient(
+          90deg,
+          rgba(18, 21, 26, 0.04) 0 1px,
+          transparent 1px 24px
+        ),
+        repeating-linear-gradient(
+          0deg,
+          rgba(18, 21, 26, 0.03) 0 1px,
+          transparent 1px 24px
+        ),
+        repeating-linear-gradient(
+          90deg,
+          transparent 0 20px,
+          rgba(255, 255, 255, 0.55) 20px 22px,
+          transparent 22px 42px
+        ),
+        var(--grain);
+      background-size: auto, auto, 32px 32px, 24px 24px, 24px 24px, 42px 100%, 200px 200px;
+      background-attachment: fixed;
     }
     .serif { font-family: 'Oswald', 'Barlow Condensed', sans-serif; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
     .industrial { font-family: 'Barlow Condensed', 'DM Sans', sans-serif; letter-spacing: 0.06em; text-transform: uppercase; }
@@ -181,9 +212,22 @@
       position: sticky;
       top: 0;
       z-index: 30;
-      background: linear-gradient(180deg, #1a1e26 0%, #12151a 100%);
+      background: linear-gradient(105deg, #1a1e26 0%, #141820 55%, #0f1216 100%);
       border-bottom: 4px solid var(--accent);
       box-shadow: 0 10px 32px -14px rgba(0, 0, 0, 0.55);
+      overflow: hidden;
+    }
+    .app-header::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      z-index: 3;
+      pointer-events: none;
+      background: var(--hazard);
+      opacity: 0.9;
     }
     .app-header::before {
       content: "";
@@ -195,8 +239,51 @@
       pointer-events: none;
       background: var(--hazard);
       opacity: 0.35;
+      z-index: 3;
     }
-    .app-header > * { position: relative; z-index: 1; }
+    .header-skin {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .header-photo {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(48vw, 360px);
+      background: var(--header-photo) center 40% / cover no-repeat;
+      opacity: 0.42;
+      mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.35) 28%, #000 72%);
+      -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.35) 28%, #000 72%);
+    }
+    .header-mesh {
+      position: absolute;
+      inset: 0;
+      opacity: 0.35;
+      background:
+        repeating-linear-gradient(
+          -12deg,
+          transparent,
+          transparent 11px,
+          rgba(255, 255, 255, 0.05) 11px,
+          rgba(255, 255, 255, 0.05) 12px
+        ),
+        linear-gradient(100deg, rgba(18, 21, 26, 0.94) 0%, rgba(18, 21, 26, 0.55) 52%, rgba(18, 21, 26, 0.25) 100%);
+    }
+    .header-rail {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3px;
+      background: repeating-linear-gradient(90deg, #fff 0 14px, transparent 14px 28px);
+      opacity: 0.35;
+      z-index: 1;
+    }
+    .app-header > *:not(.header-skin) { position: relative; z-index: 2; }
+    #main-wrapper { position: relative; z-index: 1; }
     .brand-lockup { display: flex; align-items: center; gap: 0.65rem; min-width: 0; }
     .brand-mark {
       width: 2.35rem;
@@ -349,6 +436,11 @@
 <body class="min-h-screen flex flex-col">
 
   <header class="app-header">
+    <div class="header-skin" aria-hidden="true">
+      <div class="header-photo"></div>
+      <div class="header-mesh"></div>
+      <div class="header-rail"></div>
+    </div>
     <div class="max-w-4xl mx-auto px-4 sm:px-5 py-3 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
       <div class="brand-lockup shrink-0">
         <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17h16v2H4z"/><path d="M7 17V9l5-3 5 3v8"/><path d="M9.5 12h5"/><path d="M3 8h4l1.5-3h7L17 8"/></svg></span>
@@ -818,6 +910,7 @@
       Object.assign(state, { acks: {}, cardErrors: {}, optimistic: {}, busy: {}, drafts: {}, pendingUploads: {}, pendingUploadLists: {},
         openHistory: {}, history: {}, issuesOnly: {}, collapsed: {}, expandedNotes: {}, openMachine: {}, reportAck: null, tickets: [], metrics: null });
       $("login-view").classList.remove("hidden");
+      document.body.classList.remove("signed-in");
       ["main-wrapper", "main-nav", "user-bar"].forEach((id) => $(id).classList.add("hidden"));
     }
     async function startSession() {
@@ -825,6 +918,7 @@
       const views = viewsFor(state.me.role);
       state.activeView = views.includes("tasks") ? "tasks" : views[0];
       $("login-view").classList.add("hidden");
+      document.body.classList.add("signed-in");
       ["main-wrapper", "main-nav", "user-bar"].forEach((id) => $(id).classList.remove("hidden"));
       $("user-label").textContent = state.me.name;
       $("btn-reset-demo").classList.toggle("hidden", state.me.role !== "management");

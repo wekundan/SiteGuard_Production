@@ -71,6 +71,20 @@ with TestClient(main.app) as c:
         call("GET", f"/api/tickets/{t1}/events", who, 403, f"{name} cannot read ticket history")
     call("GET", f"/api/tickets/{t1}/events", pm, 200, "P&M In-charge reads ticket history")
     call("GET", f"/api/tickets/{t1}/events", mgmt, 200, "management reads ticket history")
+    check(c.get("/api/export/events.csv", headers=mech).status_code == 403, "export activity log blocked for mech")
+    ev_csv = c.get("/api/export/events.csv", headers=mgmt)
+    check(
+        ev_csv.status_code == 200
+        and ev_csv.headers["content-type"].startswith("text/csv")
+        and "event_id" in ev_csv.text,
+        "management downloads activity log csv",
+    )
+    tk_csv = c.get("/api/export/tickets.csv", headers=pm)
+    check(tk_csv.status_code == 200 and "ticket_id" in tk_csv.text and t1 in tk_csv.text, "P&M downloads breakdown register csv")
+    one_csv = c.get(f"/api/tickets/{t1}/events.csv", headers=mgmt)
+    check(one_csv.status_code == 200 and str(t1) in one_csv.text, "single-ticket history csv")
+    check(c.get("/api/export/machines.csv", headers=mgmt).status_code == 200, "machine summary csv")
+    check(c.get("/api/export/stage-metrics.csv", headers=mgmt).status_code == 200, "stage metrics csv")
     all_ids = set(tickets())
     check(set(tickets(pm)) == all_ids, "P&M In-charge receives every ticket")
     check(tickets(site) == {}, "Sr civil engineer receives no ticket list")

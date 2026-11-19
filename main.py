@@ -12,8 +12,10 @@ SiteGuard Machinery Breakdown Tracker - FastAPI backend (SOP workflow)
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import hmac
+import io
 import json
 import os
 import secrets
@@ -190,7 +192,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.6.0")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.6.1")
 
 
 def hash_password(password: str) -> str:
@@ -1607,6 +1609,263 @@ def delete_file(file_id: str, user: User = Depends(get_current_user), db: Sessio
     db.delete(record)
     db.commit()
     return {"ok": True}
+
+
+def _csv_response(filename: str, header: list[str], rows: list[list]) -> Response:
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(header)
+    for row in rows:
+        w.writerow(row)
+    # UTF-8 BOM helps Excel on Windows recognise encoding.
+    body = "\ufeff" + buf.getvalue()
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
+def _iso_dt(v: Optional[datetime]) -> str:
+    return as_utc(v).isoformat() if v else ""
+
+
+def _event_csv_rows(
+    db: Session, ticket_id: Optional[str] = None
+) -> tuple[list[str], list[list]]:
+    q = (
+        db.query(TicketEvent, Ticket, Machine, User)
+        .join(Ticket, Ticket.ticket_id == TicketEvent.ticket_id)
+        .join(Machine, Machine.machine_id == Ticket.machine_id)
+        .join(User, User.user_id == TicketEvent.actor_id)
+        .order_by(TicketEvent.created_at.asc(), TicketEvent.event_id.asc())
+    )
+    if ticket_id is not None:
+        q = q.filter(TicketEvent.ticket_id == ticket_id)
+    header = [
+        "event_id",
+        "ticket_id",
+        "machine_name",
+        "machine_location",
+        "created_at",
+        "event_type",
+        "phase",
+        "tone",
+        "from_status",
+        "to_status",
+        "actor_name",
+        "actor_role",
+        "note",
+        "payload_json",
+    ]
+    rows: list[list] = []
+    for ev, _ticket, machine, actor in q.all():
+        rows.append(
+            [
+                ev.event_id,
+                ev.ticket_id,
+                machine.name,
+                machine.location,
+                _iso_dt(ev.created_at),
+                ev.event_type or "",
+                ev.phase or "",
+                ev.tone or "",
+                ev.from_status or "",
+                ev.to_status,
+                actor.name,
+                actor.role.value,
+                ev.note or "",
+                ev.payload or "",
+            ]
+        )
+    return header, rows
+
+
+@app.get("/api/export/tickets.csv")
+def export_tickets_csv(
+    include_closed: bool = True,
+    _: User = Depends(require_roles(*BOARD_ROLES)),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Breakdown register — one row per ticket (management / P&M In-charge)."""
+    q = db.query(Ticket).options(selectinload(Ticket.machine), selectinload(Ticket.reporter)).order_by(
+        Ticket.created_at.desc()
+    )
+    if not include_closed:
+        q = q.filter(Ticket.status != S.CLOSED)
+    tickets = q.all()
+    header = [
+        "ticket_id",
+        "machine_name",
+        "machine_location",
+        "status",
+        "status_label",
+        "created_at",
+        "reported_by",
+        "reporter_role",
+        "repair_venue",
+        "issue_description",
+        "parts_required",
+        "parts_source",
+        "vendor_name",
+        "quote_amount",
+        "quote_details",
+        "approval_note",
+        "eta_date",
+        "dispatch_details",
+        "inspected_at",
+        "cleared_at",
+        "closed_at",
+        "root_cause",
+        "repair_cost",
+        "invoice_number",
+        "closure_notes",
+        "downtime_hours",
+        "sla_due_at",
+        "is_overdue",
+        "cost_over_quote",
+    ]
+    rows: list[list] = []
+    for raw in tickets:
+        t = TicketResponse.model_validate(raw)
+        machine = raw.machine
+        reporter = raw.reporter
+        rows.append(
+            [
+                t.ticket_id,
+                machine.name if machine else "",
+                machine.location if machine else "",
+                t.status.value,
+                STAGE_LABELS.get(t.status.value, t.status.value),
+                _iso_dt(t.created_at),
+                reporter.name if reporter else t.reported_by,
+                reporter.role.value if reporter else "",
+                t.repair_venue.value if t.repair_venue else "",
+                t.issue_description or "",
+                t.parts_required or "",
+                t.parts_source or "",
+                t.vendor_name or "",
+                t.quote_amount if t.quote_amount is not None else "",
+                t.quote_details or "",
+                t.approval_note or "",
+                t.eta_date.isoformat() if t.eta_date else "",
+                t.dispatch_details or "",
+                _iso_dt(t.inspected_at),
+                _iso_dt(t.cleared_at),
+                _iso_dt(t.closed_at),
+                t.root_cause or "",
+                t.repair_cost if t.repair_cost is not None else "",
+                t.invoice_number or "",
+                t.closure_notes or "",
+                t.downtime_hours,
+                _iso_dt(t.sla_due_at),
+                "yes" if t.is_overdue else "no",
+                t.cost_over_quote if t.cost_over_quote is not None else "",
+            ]
+        )
+    return _csv_response("siteguard-breakdowns.csv", header, rows)
+
+
+@app.get("/api/export/events.csv")
+def export_events_csv(_: User = Depends(require_roles(*BOARD_ROLES)), db: Session = Depends(get_db)) -> Response:
+    """Full activity log — every ticket_events row."""
+    header, rows = _event_csv_rows(db)
+    return _csv_response("siteguard-activity-log.csv", header, rows)
+
+
+@app.get("/api/tickets/{ticket_id}/events.csv")
+def export_ticket_events_csv(
+    ticket_id: str, _: User = Depends(require_roles(*BOARD_ROLES)), db: Session = Depends(get_db)
+) -> Response:
+    get_ticket(db, ticket_id)
+    header, rows = _event_csv_rows(db, ticket_id=ticket_id)
+    return _csv_response(f"siteguard-history-{ticket_id[:8]}.csv", header, rows)
+
+
+@app.get("/api/export/machines.csv")
+def export_machines_csv(
+    months: int = 12,
+    _: User = Depends(require_roles(*BOARD_ROLES)),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Per-machine breakdown summary for the last N months (default 12)."""
+    months = max(1, min(months, 60))
+    since = _now() - timedelta(days=months * 30)
+    machines = db.query(Machine).order_by(Machine.name).all()
+    tickets = [
+        TicketResponse.model_validate(t)
+        for t in db.query(Ticket).filter(Ticket.created_at >= since).all()
+    ]
+    by_machine: dict[str, list[TicketResponse]] = {}
+    for t in tickets:
+        by_machine.setdefault(t.machine_id, []).append(t)
+    header = [
+        "machine_id",
+        "machine_name",
+        "location",
+        "machine_status",
+        "period_months",
+        "breakdown_count",
+        "total_downtime_hours",
+        "total_repair_cost_inr",
+        "open_breakdowns",
+        "closed_in_period",
+    ]
+    rows: list[list] = []
+    for m in machines:
+        list_t = by_machine.get(m.machine_id, [])
+        downtime = round(sum(t.downtime_hours for t in list_t), 2)
+        cost = round(sum(t.repair_cost or 0 for t in list_t if t.status == S.CLOSED), 2)
+        open_n = sum(1 for t in list_t if t.status not in (S.CLOSED, S.CLEARED))
+        closed_n = sum(1 for t in list_t if t.status == S.CLOSED)
+        rows.append(
+            [
+                m.machine_id,
+                m.name,
+                m.location,
+                m.status.value,
+                months,
+                len(list_t),
+                downtime,
+                cost,
+                open_n,
+                closed_n,
+            ]
+        )
+    return _csv_response("siteguard-machine-summary.csv", header, rows)
+
+
+@app.get("/api/export/stage-metrics.csv")
+def export_stage_metrics_csv(
+    _: User = Depends(require_roles(*BOARD_ROLES)), db: Session = Depends(get_db)
+) -> Response:
+    """Open counts, SLA breaches and average time per workflow stage."""
+    tickets = [TicketResponse.model_validate(t) for t in db.query(Ticket).options(selectinload(Ticket.files)).all()]
+    in_stage: dict[str, int] = {s.value: 0 for s in TicketStatus if s != S.CLOSED}
+    overdue: dict[str, int] = {}
+    for t in tickets:
+        if t.status == S.CLOSED:
+            continue
+        in_stage[t.status.value] += 1
+        if t.is_overdue:
+            overdue[t.status.value] = overdue.get(t.status.value, 0) + 1
+    stage_avg = stage_average_hours(db)
+    header = ["stage", "stage_label", "open_count", "overdue_count", "avg_hours_in_stage"]
+    rows: list[list] = []
+    for stage in in_stage:
+        rows.append(
+            [
+                stage,
+                STAGE_LABELS.get(stage, stage),
+                in_stage.get(stage, 0),
+                overdue.get(stage, 0),
+                stage_avg.get(stage, ""),
+            ]
+        )
+    return _csv_response("siteguard-stage-metrics.csv", header, rows)
 
 
 @app.get("/api/tickets/{ticket_id}/events")

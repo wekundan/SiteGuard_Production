@@ -68,6 +68,7 @@
     .btn-danger { background: #fff; color: #be123c; border-color: #f4c2cb; } .btn-danger:hover { background: #fff1f3; }
     .btn-ghost { background: rgba(255,255,255,.08); color: #d6dee8; width: auto; padding: .35rem .7rem; font-size: .75rem; border-radius: 9px; }
     .btn-ghost:hover { background: rgba(255,255,255,.16); color: #fff; }
+    .btn-sm { width: auto; padding: .45rem .75rem; font-size: .75rem; border-radius: 8px; }
 
     .pill { display: inline-flex; align-items: center; gap: .4rem; padding: .22rem .6rem; border-radius: 999px; font-size: .7rem; font-weight: 600; white-space: nowrap; }
     .pill i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; }
@@ -430,15 +431,25 @@
     <section id="view-tasks" class="max-w-lg mx-auto space-y-4 hidden" aria-live="polite"></section>
 
     <section id="view-board" class="space-y-4 hidden">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <h2 class="serif text-2xl" style="color: var(--navy);">All breakdowns</h2>
-        <label class="text-xs font-medium flex items-center gap-2" style="color: var(--muted);"><input id="board-show-closed" type="checkbox" class="rounded" /> Show closed</label>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" data-csv-export="tickets" class="btn btn-outline btn-sm">Breakdowns CSV</button>
+          <button type="button" data-csv-export="events" class="btn btn-outline btn-sm">Activity log CSV</button>
+          <label class="text-xs font-medium flex items-center gap-2" style="color: var(--muted);"><input id="board-show-closed" type="checkbox" class="rounded" /> Show closed</label>
+        </div>
       </div>
       <div id="board-list" class="space-y-4"></div>
     </section>
 
     <section id="view-dashboard" class="space-y-5 hidden">
-      <h2 class="serif text-2xl" style="color: var(--navy);">Dashboard</h2>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="serif text-2xl" style="color: var(--navy);">Dashboard</h2>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" data-csv-export="machines" class="btn btn-outline btn-sm">Machine summary CSV</button>
+          <button type="button" data-csv-export="stages" class="btn btn-outline btn-sm">Stage metrics CSV</button>
+        </div>
+      </div>
       <div id="kpi-row" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
       <div class="card overflow-hidden">
         <div class="px-5 py-4" style="border-bottom:1px solid var(--line);"><span class="label">Where breakdowns are stuck</span></div>
@@ -1365,9 +1376,12 @@
             : "";
           return `<div class="card p-5 ${t.is_overdue ? "overdue" : ""}">
             ${ticketHeader(t)}${progressHtml(t)}${ticketDetails(t)}
-            <div class="flex items-center justify-between mt-3">
+            <div class="flex flex-wrap items-center justify-between gap-2 mt-3">
               <span class="text-xs" style="color:var(--muted);">Downtime ${liveDowntime(t)}</span>
-              <button type="button" data-history="${t.ticket_id}" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">${open ? "Hide history" : "History"}</button>
+              <div class="flex items-center gap-3">
+                <button type="button" data-csv-export="ticket-events" data-ticket-id="${t.ticket_id}" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">History CSV</button>
+                <button type="button" data-history="${t.ticket_id}" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">${open ? "Hide history" : "History"}</button>
+              </div>
             </div>${timeline}</div>`;
         }).join("");
     }
@@ -1654,8 +1668,57 @@
       }
     }
 
+    function csvExportUrl(kind, ticketId) {
+      if (kind === "ticket-events") return `/api/tickets/${ticketId}/events.csv`;
+      if (kind === "tickets") {
+        const closed = $("board-show-closed").checked;
+        return `/api/export/tickets.csv?include_closed=${closed ? "true" : "false"}`;
+      }
+      const map = {
+        events: "/api/export/events.csv",
+        machines: "/api/export/machines.csv?months=12",
+        stages: "/api/export/stage-metrics.csv",
+      };
+      return map[kind] || "";
+    }
+
+    async function downloadCsv(kind, ticketId) {
+      const url = csvExportUrl(kind, ticketId);
+      if (!url) return;
+      try {
+        const res = await fetch(url, { headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) } });
+        if (!res.ok) {
+          let msg = "Download failed.";
+          try {
+            const j = await res.json();
+            if (j.detail) msg = typeof j.detail === "string" ? j.detail : msg;
+          } catch (_) { /* CSV error body */ }
+          throw new Error(msg);
+        }
+        const disp = res.headers.get("Content-Disposition") || "";
+        const m = /filename="([^"]+)"/.exec(disp);
+        const name = m ? m[1] : "siteguard-export.csv";
+        const blob = await res.blob();
+        const obj = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = obj;
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(obj);
+        showToast(`Downloaded ${name}`);
+      } catch (e) {
+        fail(e.message || "Could not download CSV.");
+      }
+    }
+
     window.addEventListener("DOMContentLoaded", () => {
       document.addEventListener("click", (e) => {
+        const ex = e.target.closest("[data-csv-export]");
+        if (ex) {
+          e.preventDefault();
+          downloadCsv(ex.getAttribute("data-csv-export"), ex.getAttribute("data-ticket-id"));
+          return;
+        }
         const pr = e.target.closest("[data-pending-key]");
         if (pr && pr.hasAttribute("data-pending-index")) {
           e.preventDefault();

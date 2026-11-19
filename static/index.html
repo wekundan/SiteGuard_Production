@@ -527,8 +527,16 @@
     .btn-ghost:hover { background: rgba(255,255,255,.16); color: #fff; }
     .btn-sm { width: auto; padding: .45rem .75rem; font-size: .75rem; border-radius: 8px; }
 
-    .login-actions { display: flex; gap: 0.5rem; align-items: stretch; }
-    .login-actions .login-submit { flex: 1; width: auto; min-height: 2.85rem; }
+    .login-actions,
+    .login-hero-actions { display: flex; gap: 0.5rem; align-items: stretch; }
+    .login-actions .login-submit,
+    .login-hero-actions .login-hero-cta { flex: 1; width: auto; min-height: 2.85rem; }
+    .login-hero-actions { margin-top: 1.35rem; max-width: 20rem; }
+    .login-hero-cta {
+      padding: 0.8rem 1rem;
+      font-weight: 700;
+    }
+    #login-panel { scroll-margin-top: 5.5rem; }
     .btn-theme-icon {
       width: 2.85rem;
       min-width: 2.85rem;
@@ -1152,9 +1160,13 @@
           <li>Stage KPIs with SLA breach highlighting</li>
           <li>Board history &amp; CSV exports for audits</li>
         </ul>
+        <div class="login-hero-actions">
+          <button type="button" id="btn-goto-login" class="btn btn-primary login-hero-cta">Sign in</button>
+          <button type="button" class="btn-theme-icon" data-theme-toggle aria-label="Switch to light mode"></button>
+        </div>
       </div>
     </div>
-    <div class="login-panel">
+    <div id="login-panel" class="login-panel">
       <div class="login-panel-blueprint" aria-hidden="true"></div>
       <div class="login-panel-scrim" aria-hidden="true"></div>
       <div class="login-panel-inner">
@@ -1165,7 +1177,7 @@
           <p class="text-xs mt-2 industrial" style="color: var(--muted); opacity: 0.85;">Build {{SITEGUARD_BUILD}}</p>
         </div>
         <form id="form-login" class="login-glass card p-6 space-y-3">
-          <div class="login-field-wrap">
+          <div class="login-field-wrap" id="login-credentials">
             <input id="login-username" type="text" autocomplete="username" autocapitalize="none" placeholder="Username" required class="field login-field" />
           </div>
           <div class="login-field-wrap">
@@ -2755,6 +2767,12 @@
       });
       document.querySelectorAll("[data-theme-toggle]").forEach((btn) => btn.addEventListener("click", toggleTheme));
       applyTheme(currentTheme());
+      $("btn-goto-login")?.addEventListener("click", () => {
+        const panel = $("login-panel");
+        const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        panel?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+        window.setTimeout(() => $("login-username")?.focus(), reduce ? 0 : 400);
+      });
       $("btn-logout").addEventListener("click", showLogin);
 
       $("select-machine").addEventListener("change", (e) => { state.selectedMachineId = e.target.value; });

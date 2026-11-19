@@ -527,10 +527,9 @@
     .btn-ghost:hover { background: rgba(255,255,255,.16); color: #fff; }
     .btn-sm { width: auto; padding: .45rem .75rem; font-size: .75rem; border-radius: 8px; }
 
-    .login-actions,
     .login-hero-actions { display: flex; gap: 0.5rem; align-items: stretch; }
-    .login-actions .login-submit,
-    .login-hero-actions .login-hero-cta { flex: 1; width: auto; min-height: 2.85rem; }
+    .login-hero-actions .login-hero-cta { width: auto; min-height: 2.85rem; }
+    .login-submit { width: 100%; }
     .login-hero-actions { margin-top: 1.35rem; max-width: 20rem; }
     .login-hero-cta {
       padding: 0.8rem 1rem;
@@ -1107,11 +1106,13 @@
           <span class="brand-tagline">AI fleet monitoring · Breakdown command</span>
         </div>
       </div>
-      <div id="user-bar" class="hidden flex items-center min-w-0 w-full sm:w-auto gap-2 sm:max-w-[min(100%,24rem)] ml-auto shrink-0">
-        <span id="user-label" class="text-xs font-medium truncate min-w-0 flex-1 sm:flex-initial sm:max-w-[10rem]" style="color:#b8c5d3;"></span>
-        <button id="btn-reset-demo" type="button" class="hidden btn btn-ghost whitespace-nowrap">Reset demo</button>
-        <button id="btn-logout" type="button" class="btn btn-ghost whitespace-nowrap">Log out</button>
-        <button type="button" class="btn-theme-icon btn-ghost" data-theme-toggle aria-label="Switch to light mode"></button>
+      <div class="header-actions flex items-center min-w-0 w-full sm:w-auto gap-2 sm:max-w-[min(100%,26rem)] ml-auto shrink-0">
+        <div id="user-bar" class="hidden flex items-center min-w-0 gap-2 flex-1 sm:flex-initial justify-end">
+          <span id="user-label" class="text-xs font-medium truncate min-w-0 flex-1 sm:flex-initial sm:max-w-[10rem]" style="color:#b8c5d3;"></span>
+          <button id="btn-reset-demo" type="button" class="hidden btn btn-ghost whitespace-nowrap">Reset demo</button>
+          <button id="btn-logout" type="button" class="btn btn-ghost whitespace-nowrap">Log out</button>
+        </div>
+        <button type="button" class="btn-theme-icon btn-ghost shrink-0" data-theme-toggle aria-label="Switch to light mode"></button>
       </div>
     </div>
     <nav id="main-nav" class="hidden">
@@ -1162,7 +1163,6 @@
         </ul>
         <div class="login-hero-actions">
           <button type="button" id="btn-goto-login" class="btn btn-primary login-hero-cta">Sign in</button>
-          <button type="button" class="btn-theme-icon" data-theme-toggle aria-label="Switch to light mode"></button>
         </div>
       </div>
     </div>
@@ -1184,10 +1184,7 @@
             <input id="login-password" type="password" autocomplete="current-password" placeholder="Password" required class="field login-field" />
           </div>
           <div id="login-error" class="hidden text-sm font-medium" style="color:#fb7185;"></div>
-          <div class="login-actions">
-            <button type="submit" class="btn btn-primary login-submit" style="padding:.8rem 1rem;">Log in</button>
-            <button type="button" class="btn-theme-icon" data-theme-toggle aria-label="Switch to light mode"></button>
-          </div>
+          <button type="submit" class="btn btn-primary login-submit" style="padding:.8rem 1rem;">Log in</button>
         </form>
       </div>
     </div>

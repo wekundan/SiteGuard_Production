@@ -3,7 +3,7 @@ services:
     name: siteguard-breakdown-tracker
     runtime: python
     plan: free
-    buildCommand: bash scripts/fetch_login_hero.sh && pip install -r requirements.txt
+    buildCommand: python3 scripts/fetch_login_hero.py && pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /
     envVars:

@@ -143,28 +143,34 @@
       box-shadow: 0 0 20px rgba(34, 211, 238, 0.35);
     }
     html.theme-dark body.signed-in .brand-tagline { color: #6b8a9a; }
-    html.theme-dark body.signed-in #main-nav {
+    body.signed-in #main-nav {
       background: transparent;
       border: none;
       padding: 0 0 0.65rem;
     }
-    html.theme-dark body.signed-in #nav-tabs {
+    body.signed-in #nav-tabs {
       gap: 0.3rem;
       padding: 0.35rem;
       margin: 0 1rem;
       max-width: 56rem;
-      background: rgba(6, 8, 12, 0.55);
-      border: 1px solid var(--fleet-border);
       border-radius: 12px;
       backdrop-filter: blur(10px);
     }
-    html.theme-dark body.signed-in .tab {
+    body.signed-in .tab {
+      flex: 1;
       border: 1px solid transparent;
       border-radius: 9px;
       border-bottom: none;
-      color: #7d8799;
       padding: 0.65rem 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
     }
+    html.theme-dark body.signed-in #nav-tabs {
+      background: rgba(6, 8, 12, 0.55);
+      border: 1px solid var(--fleet-border);
+    }
+    html.theme-dark body.signed-in .tab { color: #7d8799; }
     html.theme-dark body.signed-in .tab:hover { color: #e8ecf3; background: rgba(255, 255, 255, 0.04); }
     html.theme-dark body.signed-in .tab.active {
       color: #fff;
@@ -444,20 +450,20 @@
     html.theme-light body.signed-in .tl-card,
     html.theme-light body.signed-in .remark-composer { background: #fff; border-color: var(--line); }
     html.theme-light body.signed-in .now-card { background: #f0fdfa; border-color: #99f6e4; }
-    html.theme-light body.signed-in #main-nav { background: transparent; }
     html.theme-light body.signed-in #nav-tabs {
-      background: #fff;
-      border: 1px solid var(--line);
-      box-shadow: 0 4px 18px -14px rgba(18, 21, 26, 0.12);
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid rgba(8, 145, 178, 0.22);
+      box-shadow: 0 0 32px rgba(34, 211, 238, 0.08), 0 8px 28px -14px rgba(18, 21, 26, 0.12);
     }
     html.theme-light body.signed-in .tab { color: #64748b; }
-    html.theme-light body.signed-in .tab:hover { color: #0f172a; background: #f1f5f9; }
+    html.theme-light body.signed-in .tab:hover { color: #0f172a; background: rgba(8, 145, 178, 0.06); }
     html.theme-light body.signed-in .tab.active {
       color: #0e7490;
-      background: rgba(34, 211, 238, 0.12);
-      border-color: rgba(8, 145, 178, 0.35);
-      box-shadow: none;
+      background: linear-gradient(135deg, rgba(34, 211, 238, 0.22) 0%, rgba(6, 182, 212, 0.08) 100%);
+      border-color: rgba(8, 145, 178, 0.4);
+      box-shadow: 0 0 24px rgba(34, 211, 238, 0.14);
     }
+    html.theme-light body.signed-in .count { background: #0891b2; color: #fff; border-radius: 6px; }
     html.theme-light body.signed-in #main-wrapper { max-width: 56rem; }
     html.theme-light .fleet-strip {
       background: linear-gradient(180deg, #f8fafc 0%, #eef2f6 100%);
@@ -521,6 +527,44 @@
     .btn-ghost:hover { background: rgba(255,255,255,.16); color: #fff; }
     .btn-sm { width: auto; padding: .45rem .75rem; font-size: .75rem; border-radius: 8px; }
 
+    .login-actions { display: flex; gap: 0.5rem; align-items: stretch; }
+    .login-actions .login-submit { flex: 1; width: auto; min-height: 2.85rem; }
+    .btn-theme-icon {
+      width: 2.85rem;
+      min-width: 2.85rem;
+      flex-shrink: 0;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(8, 11, 18, 0.55);
+      color: #22d3ee;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+    }
+    .btn-theme-icon svg { width: 1.2rem; height: 1.2rem; }
+    .btn-theme-icon:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px -8px rgba(34, 211, 238, 0.35);
+      background: rgba(34, 211, 238, 0.12);
+    }
+    .btn-theme-icon:active { transform: scale(0.96); }
+    html.theme-light .btn-theme-icon {
+      background: #fff;
+      border-color: #cdd3dc;
+      color: #0891b2;
+    }
+    html.theme-light .btn-theme-icon:hover {
+      background: rgba(8, 145, 178, 0.08);
+      box-shadow: 0 8px 20px -10px rgba(8, 145, 178, 0.25);
+    }
+    html.theme-light .btn-theme-icon.btn-ghost {
+      background: rgba(15, 23, 42, 0.06);
+      border-color: transparent;
+    }
+
     .pill { display: inline-flex; align-items: center; gap: .4rem; padding: .22rem .6rem; border-radius: 999px; font-size: .7rem; font-weight: 600; white-space: nowrap; }
     .pill i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; }
     .t-amber { background: #fdf3dc; color: #8a5a00; } .t-sky { background: #e7f2fa; color: #0b5a8a; }
@@ -572,7 +616,9 @@
       display: flex; align-items: center; justify-content: center; gap: .4rem; transition: color .15s; }
     .tab { white-space: nowrap; }
     @media (max-width: 360px) { .tab { font-size: .72rem; padding: .8rem .2rem; gap: .25rem; } }
-    .tab:hover { color: #fff; } .tab.active { color: #fff; border-bottom-color: var(--accent); }
+    body:not(.signed-in) .tab:hover { color: #fff; }
+    body:not(.signed-in) .tab.active { color: #fff; border-bottom-color: var(--accent); }
+    body.signed-in .tab.active { border-bottom-color: transparent; }
     .count { background: var(--accent); color: #fff; border-radius: 4px; font-size: .68rem; font-weight: 700; padding: 0 .4rem; min-width: 1.1rem; text-align: center; }
 
     .remark-thread { display: flex; flex-direction: column; gap: .45rem; margin-bottom: .65rem; max-height: 9rem; overflow-y: auto; }
@@ -1053,13 +1099,11 @@
           <span class="brand-tagline">AI fleet monitoring · Breakdown command</span>
         </div>
       </div>
-      <div class="flex items-center min-w-0 w-full sm:w-auto gap-2 sm:max-w-[min(100%,24rem)] ml-auto shrink-0">
-        <button id="btn-theme" type="button" class="btn btn-ghost whitespace-nowrap" aria-label="Toggle light or dark theme"><span id="btn-theme-label">Light</span></button>
-        <div id="user-bar" class="hidden flex items-center min-w-0 gap-2">
-          <span id="user-label" class="text-xs font-medium truncate min-w-0 flex-1 sm:flex-initial sm:max-w-[10rem]" style="color:#b8c5d3;"></span>
-          <button id="btn-reset-demo" type="button" class="hidden btn btn-ghost whitespace-nowrap">Reset demo</button>
-          <button id="btn-logout" type="button" class="btn btn-ghost whitespace-nowrap">Log out</button>
-        </div>
+      <div id="user-bar" class="hidden flex items-center min-w-0 w-full sm:w-auto gap-2 sm:max-w-[min(100%,24rem)] ml-auto shrink-0">
+        <span id="user-label" class="text-xs font-medium truncate min-w-0 flex-1 sm:flex-initial sm:max-w-[10rem]" style="color:#b8c5d3;"></span>
+        <button id="btn-reset-demo" type="button" class="hidden btn btn-ghost whitespace-nowrap">Reset demo</button>
+        <button id="btn-logout" type="button" class="btn btn-ghost whitespace-nowrap">Log out</button>
+        <button type="button" class="btn-theme-icon btn-ghost" data-theme-toggle aria-label="Switch to light mode"></button>
       </div>
     </div>
     <nav id="main-nav" class="hidden">
@@ -1128,7 +1172,10 @@
             <input id="login-password" type="password" autocomplete="current-password" placeholder="Password" required class="field login-field" />
           </div>
           <div id="login-error" class="hidden text-sm font-medium" style="color:#fb7185;"></div>
-          <button type="submit" class="btn btn-primary login-submit" style="padding:.8rem 1rem;">Log in</button>
+          <div class="login-actions">
+            <button type="submit" class="btn btn-primary login-submit" style="padding:.8rem 1rem;">Log in</button>
+            <button type="button" class="btn-theme-icon" data-theme-toggle aria-label="Switch to light mode"></button>
+          </div>
         </form>
       </div>
     </div>
@@ -1204,6 +1251,20 @@
       return document.documentElement.classList.contains("theme-dark") ? "dark" : "light";
     }
 
+    const THEME_ICON_SUN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>`;
+    const THEME_ICON_MOON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+
+    function syncThemeToggleButtons() {
+      const dark = currentTheme() === "dark";
+      const label = dark ? "Switch to light mode" : "Switch to dark mode";
+      const icon = dark ? THEME_ICON_SUN : THEME_ICON_MOON;
+      document.querySelectorAll("[data-theme-toggle]").forEach((btn) => {
+        btn.innerHTML = icon;
+        btn.setAttribute("aria-label", label);
+        btn.setAttribute("title", label);
+      });
+    }
+
     function applyTheme(mode) {
       const root = document.documentElement;
       const dark = mode === "dark";
@@ -1212,10 +1273,7 @@
       localStorage.setItem(THEME_KEY, mode);
       const meta = document.getElementById("meta-theme-color");
       if (meta) meta.setAttribute("content", dark ? "#06080c" : "#f0f2f5");
-      const lbl = $("btn-theme-label");
-      if (lbl) lbl.textContent = dark ? "Light" : "Dark";
-      const btn = $("btn-theme");
-      if (btn) btn.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+      syncThemeToggleButtons();
     }
 
     function toggleTheme() {
@@ -2695,7 +2753,7 @@
           errEl.classList.remove("hidden");
         }
       });
-      $("btn-theme").addEventListener("click", toggleTheme);
+      document.querySelectorAll("[data-theme-toggle]").forEach((btn) => btn.addEventListener("click", toggleTheme));
       applyTheme(currentTheme());
       $("btn-logout").addEventListener("click", showLogin);
 

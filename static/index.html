@@ -494,6 +494,7 @@
       color: var(--ink);
     }
     html.theme-light .login-panel h1 { color: var(--navy) !important; }
+    html.theme-light .login-panel .login-panel-meta { color: #64748b !important; opacity: 1; }
     html.theme-light .login-hero-title { color: #fff; }
     html.theme-light .header-mesh {
       background: linear-gradient(100deg, rgba(255, 255, 255, 0.92) 0%, rgba(241, 245, 249, 0.85) 55%, rgba(226, 232, 240, 0.5) 100%);
@@ -921,7 +922,7 @@
       color: #e8ecf3;
     }
     .login-panel h1 { color: #eef2f8 !important; }
-    .login-panel .text-sm { color: #8b95a8 !important; }
+    .login-panel .login-panel-meta { color: #9fb0c2 !important; font-weight: 600; }
     .login-panel .btn-primary {
       background: linear-gradient(135deg, #22d3ee 0%, #0891b2 100%);
       color: #041016;
@@ -1188,9 +1189,8 @@
       <div class="login-panel-inner">
         <div class="text-center mb-6">
           <span class="login-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17h16v2H4z"/><path d="M7 17V9l5-3 5 3v8"/><path d="M9.5 12h5"/><path d="M3 8h4l1.5-3h7L17 8"/></svg></span>
-          <h1 class="serif text-3xl mt-3" style="color: var(--navy);">Sign in</h1>
-          <p class="text-sm mt-1" style="color: var(--muted);">SiteGuard breakdown tracker</p>
-          <p class="text-xs mt-2 industrial" style="color: var(--muted); opacity: 0.85;">Build {{SITEGUARD_BUILD}}</p>
+          <h1 class="serif text-3xl mt-3">Sign in</h1>
+          <p class="text-xs mt-2 industrial login-panel-meta">Build {{SITEGUARD_BUILD}}</p>
         </div>
         <form id="form-login" class="login-glass card p-6 space-y-3">
           <div class="login-field-wrap" id="login-credentials">

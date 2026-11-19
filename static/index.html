@@ -951,10 +951,6 @@
       0% { background-position: 0 0; }
       100% { background-position: 68px 0; }
     }
-    @keyframes rigDrive {
-      0%, 100% { transform: translateX(-4%) translateY(0); opacity: 0.22; }
-      50% { transform: translateX(4%) translateY(-2px); opacity: 0.3; }
-    }
     @keyframes loginBtnShine {
       0% { transform: translateX(-120%) skewX(-18deg); }
       100% { transform: translateX(220%) skewX(-18deg); }
@@ -1000,20 +996,21 @@
         linear-gradient(100deg, rgba(6, 8, 12, 0.93) 0%, rgba(6, 8, 12, 0.78) 42%, rgba(6, 8, 12, 0.52) 100%),
         radial-gradient(ellipse 80% 60% at 70% 80%, rgba(249, 115, 22, 0.12) 0%, transparent 55%);
     }
-    .login-rig {
-      position: absolute;
-      right: -5%;
-      bottom: 12%;
-      width: min(72vw, 420px);
-      height: auto;
-      z-index: 2;
-      color: rgba(255, 255, 255, 0.55);
-      animation: rigDrive 14s ease-in-out infinite;
-      filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.45));
+    .login-road-band.login-hero-road {
+      display: none;
+      position: relative;
+      bottom: auto;
+      z-index: 28;
+      flex-shrink: 0;
+      height: 6px;
+      opacity: 0.9;
+      box-shadow: 0 4px 14px -6px rgba(34, 211, 238, 0.35);
     }
-    .login-rig svg { width: 100%; height: auto; display: block; }
-    .login-hero-road--scroll {
-      z-index: 3;
+    body:not(.signed-in) .login-road-band.login-hero-road {
+      display: block;
+    }
+    .login-hero-road--scroll,
+    .login-road-band.login-hero-road--scroll {
       animation: roadScroll 2.8s linear infinite;
     }
     .login-hero-inner { z-index: 4; }
@@ -1103,7 +1100,7 @@
     html.reduce-motion .login-layer--blueprint,
     html.reduce-motion .login-panel-blueprint,
     html.reduce-motion .login-hero-road--scroll,
-    html.reduce-motion .login-rig { animation: none !important; }
+    html.reduce-motion .login-road-band { animation: none !important; }
     html.reduce-motion .login-canvas { display: none; }
     html.reduce-motion .login-field-wrap:focus-within { transform: none; }
     html.reduce-motion .login-submit:hover { transform: none; }
@@ -1140,6 +1137,8 @@
     </nav>
   </header>
 
+  <div class="login-road-band login-hero-road login-hero-road--scroll" aria-hidden="true"></div>
+
   <div id="fleet-strip" class="fleet-strip hidden" aria-label="Live fleet overview">
     <div class="max-w-4xl mx-auto px-4 sm:px-5 fleet-strip-inner">
       <span class="fleet-live industrial"><i aria-hidden="true"></i> Live fleet</span>
@@ -1160,18 +1159,6 @@
       <div class="login-layer login-layer--photo" data-parallax="0.035" aria-hidden="true"></div>
       <div class="login-layer login-layer--blueprint" data-parallax="0.02" aria-hidden="true"></div>
       <div class="login-layer login-layer--shade" aria-hidden="true"></div>
-      <div class="login-rig" data-parallax="0.055" aria-hidden="true">
-        <svg viewBox="0 0 640 200" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-          <path d="M40 150h520v12H40z" opacity="0.35"/>
-          <path d="M80 130h220l28-44h72l20 44h100v20H80z" opacity="0.9"/>
-          <circle cx="140" cy="150" r="28" fill="none" stroke="currentColor" stroke-width="10" opacity="0.85"/>
-          <circle cx="380" cy="150" r="28" fill="none" stroke="currentColor" stroke-width="10" opacity="0.85"/>
-          <circle cx="500" cy="150" r="22" fill="none" stroke="currentColor" stroke-width="8" opacity="0.7"/>
-          <path d="M120 96h48v34h-48z" opacity="0.55"/>
-          <path d="M300 86h90v10H300zM310 76h70v10h-70z" opacity="0.4"/>
-        </svg>
-      </div>
-      <div class="login-hero-road login-hero-road--scroll" aria-hidden="true"></div>
       <div class="login-hero-inner" data-parallax="0.012">
         <p class="login-hero-eyebrow">Heavy construction · Trucking fleet</p>
         <h2 class="login-hero-title serif">Monitor every asset on site</h2>

@@ -477,6 +477,9 @@
     html.theme-light .fleet-stat-val { color: var(--ink); }
     html.theme-light .fleet-stat-lbl { color: var(--muted); }
     html.theme-light .fleet-stat--ok .fleet-stat-val { color: #0f766e; }
+    html.theme-light .fleet-stat--warn .fleet-stat-val { color: #b45309; }
+    html.theme-light .fleet-stat--bad .fleet-stat-val { color: #be123c; }
+    html.theme-light .fleet-stat--bad { border-color: rgba(190, 18, 60, 0.35); box-shadow: 0 0 14px rgba(190, 18, 60, 0.08); }
     html.theme-light .login-panel {
       background: linear-gradient(180deg, #f5f7fa 0%, #eef1f5 100%);
       border-color: var(--line);
@@ -2470,7 +2473,7 @@
             <div class="flex flex-wrap items-center justify-between gap-2 mt-3">
               <span class="text-xs" style="color:var(--muted);">Downtime ${liveDowntime(t)}</span>
               <div class="flex items-center gap-3">
-                <button type="button" data-csv-export="ticket-events" data-ticket-id="${t.ticket_id}" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">History CSV</button>
+                <button type="button" data-csv-export="ticket-events" data-ticket-id="${t.ticket_id}" title="Download history CSV" aria-label="Download history CSV" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">↓</button>
                 <button type="button" data-history="${t.ticket_id}" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">${open ? "Hide history" : "History"}</button>
               </div>
             </div>${timeline}</div>`;

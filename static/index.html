@@ -2473,8 +2473,8 @@
             <div class="flex flex-wrap items-center justify-between gap-2 mt-3">
               <span class="text-xs" style="color:var(--muted);">Downtime ${liveDowntime(t)}</span>
               <div class="flex items-center gap-3">
-                <button type="button" data-csv-export="ticket-events" data-ticket-id="${t.ticket_id}" title="Download history CSV" aria-label="Download history CSV" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">↓</button>
                 <button type="button" data-history="${t.ticket_id}" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">${open ? "Hide history" : "History"}</button>
+                <button type="button" data-csv-export="ticket-events" data-ticket-id="${t.ticket_id}" title="Download history CSV" aria-label="Download history CSV" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">↓</button>
               </div>
             </div>${timeline}</div>`;
         }).join("");

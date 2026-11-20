@@ -661,6 +661,47 @@
     .remark-composer .field:focus { box-shadow: none; }
     .remark-composer-bar { display: flex; align-items: center; gap: .5rem; padding: .45rem .55rem; border-top: 1px solid var(--line); background: #faf9f7; }
     .remark-composer-bar input[type="file"] { flex: 1; min-width: 0; font-size: .75rem; font-weight: 500; }
+    /* Attachment box (theme-aware). */
+    .upload-box {
+      border-radius: 12px;
+      padding: 0.75rem;
+      background: rgba(8, 11, 18, 0.55);
+      border: 1px dashed rgba(255, 255, 255, 0.16);
+    }
+    .upload-input {
+      padding: 0.5rem 0.6rem;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--ink);
+      background: rgba(6, 8, 12, 0.7);
+      cursor: pointer;
+    }
+    .upload-input::file-selector-button {
+      margin-right: 0.75rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid rgba(34, 211, 238, 0.35);
+      background: rgba(34, 211, 238, 0.12);
+      color: #e8ecf3;
+      font-weight: 600;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+    .upload-input::file-selector-button:hover { background: rgba(34, 211, 238, 0.22); }
+    html.theme-light .upload-box {
+      background: #f4f8fc;
+      border-color: #9cb4cc;
+    }
+    html.theme-light .upload-input {
+      background: #ffffff;
+      color: #12151a;
+    }
+    html.theme-light .upload-input::file-selector-button {
+      background: #f1f5f9;
+      border-color: #cdd3dc;
+      color: #12151a;
+    }
+    html.theme-light .upload-input::file-selector-button:hover { background: #e2e8f0; }
     .btn-send { width: 2.5rem; height: 2.5rem; flex-shrink: 0; border: none; border-radius: 8px; background: var(--navy); color: #fff; font-size: 1.1rem; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
     .btn-send:hover { background: var(--navy-2); }
     .btn-send:active { transform: scale(.96); }
@@ -1971,10 +2012,10 @@
           <div class="label" style="color:#0b6b52;">${esc(UPLOAD_NAME[kind] || "File")} attached</div>
           <div class="text-sm truncate">${attached.map((f) => esc(f.filename)).join(", ")}</div></div></div>`;
       }
-      return `<div class="rounded-xl p-3" style="background:#f4f8fc; border:1px dashed #9cb4cc;">
+      return `<div class="upload-box">
         <div class="label mb-2">${label}</div>
         <input type="file" data-${defer ? "deferred-upload" : "upload"}="${t.ticket_id}:${kind}" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-          class="field" style="padding:.65rem; font-weight:600; background:#fff;" />
+          class="field upload-input" />
         ${defer && state.pendingUploads[`${t.ticket_id}:${kind}`]
           ? `<div class="text-sm mt-2" style="color:#0b6b52;">${esc(state.pendingUploads[`${t.ticket_id}:${kind}`].name)}</div>`
           : ""}

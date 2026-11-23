@@ -2317,9 +2317,9 @@
 
     // ---- history: turn raw log rows into action-titled timeline cards ----------
     const ROLE_LABEL = {
-      site_office: "Sr Civil Engineer", deo: "P&M DEO", mech_engineer: "Mechanical Engineer", pm_incharge: "P&M In-charge",
+      site_office: "Sr Civil Engineer", deo: "P&M DEO", mech_engineer: "Mechanical Manager", pm_incharge: "P&M In-charge",
       site_store: "Site Store", central_store: "Central Store", management: "Management",
-      supervisor: "Mechanical Engineer", head_office: "Central Store" // legacy role names
+      supervisor: "Mechanical Manager", head_office: "Central Store" // legacy role names
     };
     const stageLabel = (s) => (STATUS[s] || { label: s }).label;
     const PHASES = { report: "Reported", inspection: "Inspection", parts: "Parts", quotation: "Quotation", repair: "Repair", close: "Closing", other: "Other" };
@@ -2473,8 +2473,8 @@
             <div class="flex flex-wrap items-center justify-between gap-2 mt-3">
               <span class="text-xs" style="color:var(--muted);">Downtime ${liveDowntime(t)}</span>
               <div class="flex items-center gap-3">
-                <button type="button" data-history="${t.ticket_id}" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">${open ? "Hide history" : "History"}</button>
                 <button type="button" data-csv-export="ticket-events" data-ticket-id="${t.ticket_id}" title="Download history CSV" aria-label="Download history CSV" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">↓</button>
+                <button type="button" data-history="${t.ticket_id}" class="text-xs font-semibold underline underline-offset-2" style="color:var(--navy);">${open ? "Hide history" : "History"}</button>
               </div>
             </div>${timeline}</div>`;
         }).join("");

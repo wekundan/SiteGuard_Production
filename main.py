@@ -192,7 +192,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.9.10")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.9.11")
 
 
 def hash_password(password: str) -> str:
@@ -438,7 +438,7 @@ def seed_initial_data(db: Session) -> None:
     users = [
         User(user_id=U_SITE, name="Ramesh Kumar (Sr Civil Engineer)", username="ramesh", password_hash=pw(), role=UserRole.SITE_OFFICE),
         User(user_id=U_DEO, name="Deepak Verma (P&M DEO)", username="deepak", password_hash=pw(), role=UserRole.DEO),
-        User(user_id=U_MECH, name="Vikram Singh (Mechanical Engineer)", username="vikram", password_hash=pw(), role=UserRole.MECH_ENGINEER),
+        User(user_id=U_MECH, name="Vikram Singh (Mechanical Manager)", username="vikram", password_hash=pw(), role=UserRole.MECH_ENGINEER),
         User(user_id=U_PM, name="Meera Joshi (P&M In-charge)", username="meera", password_hash=pw(), role=UserRole.PM_INCHARGE),
         User(user_id=U_STORE, name="Suresh Patil (Site Store)", username="suresh", password_hash=pw(), role=UserRole.SITE_STORE),
         User(user_id=U_CENTRAL, name="Ananya Nair (Central Store)", username="ananya", password_hash=pw(), role=UserRole.CENTRAL_STORE),

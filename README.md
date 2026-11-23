@@ -3,7 +3,7 @@
 FastAPI + Postgres + single-page mobile web app that follows the plant breakdown SOP.
 
 ## Workflow
-1. **Report** (Sr Civil Engineer or P&M DEO) -> 2. **Inspect and decide** (Mechanical Engineer or P&M In-charge): in-house or outside workshop.
+1. **Report** (Sr Civil Engineer or P&M DEO) -> 2. **Inspect and decide** (Mechanical Manager or P&M In-charge): in-house or outside workshop.
 - **In-house:** site store check. Parts available -> repair. Not available -> requisition -> **central store dispatches** -> **site store confirms receipt** -> repair.
 - **Outside:** quotation pending / requested (remarks) -> upload vendor quotation -> enter quote details -> **management approves** (or sends back) -> **mech/PM logs dispatch to vendor** -> repair at vendor -> **mech/PM confirms vehicle received at site** (breakdown cleared) -> **P&M In-charge** closes register with bill and cost.
 3. Mechanical dept marks the **breakdown cleared** (machine active again) -> 4. **P&M In-charge closes** the register entry with root cause and total repair cost. Downtime is calculated automatically.
@@ -63,8 +63,8 @@ All demo users share the password in the `DEMO_PASSWORD` env var (local default 
 |---|---|---|
 | `ramesh` | Sr Civil Engineer | Report breakdowns |
 | `deepak` | P&M DEO | Report breakdowns |
-| `vikram` | Mechanical Engineer | Inspect, parts check, quotation, mark cleared |
-| `meera` | P&M In-charge | Same as mechanical engineer, plus close register entries |
+| `vikram` | Mechanical Manager | Inspect, parts check, quotation, mark cleared |
+| `meera` | P&M In-charge | Same as mechanical manager, plus close register entries |
 | `suresh` | Site Store | Confirm receipt of spares in transit |
 | `ananya` | Central Store | Dispatch spares |
 | `rajeshwari` | Management | Approve quotations, dashboard, reset demo |
@@ -82,7 +82,7 @@ default 330 = IST) when one is entered. Alerts (WhatsApp/email) are not built ye
 2. Push this folder to GitHub.
 3. On [Render](https://render.com): **New + -> Blueprint** -> select the repo -> paste the Neon string into `DATABASE_URL`
    and set `DEMO_PASSWORD` -> **Apply**.
-   The build downloads the login hero video into `static/media/login-hero.mp4` (see `scripts/fetch_login_hero.sh`). If you deploy without Blueprint, set build to: `bash scripts/fetch_login_hero.sh && pip install -r requirements.txt`.
+   The build downloads the login hero video via `python3 scripts/fetch_login_hero.py` (Pexels construction clip; Mixkit often 403s on CI). If you deploy without Blueprint, set build to: `python3 scripts/fetch_login_hero.py && pip install -r requirements.txt`.
 4. Open the Render URL on a phone.
 
 **Redeploying over the previous (SOP) version** needs no reset: the new `ticket_files` table and `invoice_number` column are added automatically.

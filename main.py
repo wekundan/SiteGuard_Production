@@ -192,7 +192,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.10.3")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.11.0")
 
 
 def hash_password(password: str) -> str:
@@ -979,18 +979,18 @@ TASK_STATUSES_BY_ROLE: dict[UserRole, tuple[TicketStatus, ...]] = {
 }
 
 STAGE_LABELS: dict[str, str] = {
-    "pending_inspection": "Needs inspection",
-    "pending_parts_check": "Site store check",
-    "pending_dispatch": "Awaiting central store",
-    "pending_local_purchase": "Purchase parts locally",
-    "in_transit": "Spares in transit",
-    "quotation_requested": "Quotation pending / requested",
-    "pending_quotation": "Vendor quotation",
-    "pending_approval": "Awaiting approval",
+    "pending_inspection": "Awaiting inspection",
+    "pending_parts_check": "Checking site store stock",
+    "pending_dispatch": "Central parts desk",
+    "pending_local_purchase": "Buy parts at site",
+    "in_transit": "Parts on the way",
+    "quotation_requested": "Vendor quote requested",
+    "pending_quotation": "Quote ready to submit",
+    "pending_approval": "Awaiting management OK",
     "pending_vendor_dispatch": "Send machine to vendor",
     "vendor_repair_in_progress": "At vendor workshop",
-    "repair_in_progress": "Repair in progress",
-    "cleared": "Cleared, record pending",
+    "repair_in_progress": "Workshop repair on site",
+    "cleared": "Machine ready (closing)",
     "closed": "Closed",
 }
 

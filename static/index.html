@@ -2068,7 +2068,7 @@
       if (t.issue_description) row("Issue", esc(t.issue_description));
       if (t.repair_venue) row("Repair", t.repair_venue === "in_house" ? "In-house workshop" : "Outside workshop");
       if (t.parts_required) row("Parts", esc(t.parts_required));
-      if (t.dispatch_details) row("Dispatch", esc(t.dispatch_details));
+      if (t.dispatch_details) row("Parts status", esc(t.dispatch_details));
       if (t.parts_issue_note) rows.push(`<div class="rounded-lg px-3 py-2 mt-1" style="background:#fdeef1; color:#9f1239;"><strong>Wrong parts reported:</strong> ${esc(t.parts_issue_note)}</div>`);
       if (t.vendor_dispatch_note) row("Vendor dispatch", esc(t.vendor_dispatch_note));
       if (t.vehicle_received_note) row("Received at site", esc(t.vehicle_received_note));
@@ -2357,15 +2357,11 @@
     function eventView(e) {
       const copy = EVENT_COPY[e.type] || { title: `Status Changed to ${stageLabel(e.to_status)}`, label: "Note" };
       const p = e.payload || {};
-      const facts = [];
-      if (p.eta_date) facts.push(`Reaches site by <strong>${dateShort(p.eta_date)}</strong>`);
-      if (p.attachment) facts.push(`Attached <strong>${esc(p.attachment)}</strong>`);
-      if (p.repair_cost != null) facts.push(`Repair cost <strong>${inr(p.repair_cost)}</strong>`);
       const tone = TONE[e.tone] || "amber";
       // A hand-over chip appears only when the ticket changes hands, never as "Moved to <column>".
       const owner = OWNER[e.to_status];
       const handed = e.to_status !== "closed" && owner && (!e.from_status || OWNER[e.from_status] !== owner) ? owner : "";
-      return { title: copy.title, label: copy.label || "Note", tone, glyph: TONE_GLYPH[e.tone] || "•", facts, handed };
+      return { title: copy.title, label: copy.label || "Note", tone, glyph: TONE_GLYPH[e.tone] || "•", handed };
     }
 
     const NOW_TEXT = {
@@ -2427,9 +2423,7 @@
         const cards = closed ? "" : g.rows.map((r) => {
           const { e, v, prev } = r;
           const who = String(e.actor || "").replace(/\s*\([^)]*\)\s*$/, "");
-          const role = ROLE_LABEL[e.actor_role] || "";
-          const long = (e.note || "").length > 140 && !state.expandedNotes[e.event_id];
-          const gap = prev ? (new Date(e.created_at) - new Date(prev.created_at)) / 3600000 : 0;
+          const showDetails = !!state.expandedNotes[e.event_id];
           return `<div class="tl-item tone-${v.tone}">
             <span class="tl-dot" aria-hidden="true">${v.glyph}</span>
             <div class="tl-card">
@@ -2437,14 +2431,13 @@
                 <div class="tl-title">${esc(v.title)}${e.event_id === events[events.length - 1].event_id ? '<span class="tl-latest">Latest</span>' : ""}</div>
                 <div class="tl-time" title="${esc(formatDateTime(e.created_at))}">${formatDuration(hoursSince(e.created_at))} ago</div>
               </div>
-              <div class="tl-by">${esc(who)}${role ? " · " + esc(role) : ""}</div>
+              <div class="tl-by">${esc(who)}</div>
               ${v.handed ? `<span class="tl-chip">Handed to ${esc(v.handed)}</span>` : ""}
-              ${v.facts.length ? `<div class="tl-facts">${v.facts.join(" · ")}</div>` : ""}
-              ${e.note ? `<div class="tl-note"><span class="tl-note-label">${esc(v.label)}</span>
-                <blockquote class="${long ? "clamp" : ""}">${esc(e.note)}</blockquote>
-                ${(e.note || "").length > 140 ? `<button type="button" class="tl-more" data-note-toggle="${e.event_id}">${long ? "Show more" : "Show less"}</button>` : ""}</div>` : ""}
+              ${e.note ? `<button type="button" class="tl-more" data-note-toggle="${e.event_id}">${showDetails ? "Hide details" : "View details"}</button>` : ""}
+              ${e.note && showDetails ? `<div class="tl-note"><span class="tl-note-label">${esc(v.label)}</span>
+                <blockquote>${esc(e.note)}</blockquote></div>` : ""}
             </div>
-          </div>${prev && gap * 60 >= 1 ? `<div class="tl-gap">${esc(stageLabel(e.from_status))} · ${formatDuration(gap)}</div>` : ""}`;
+          </div>`;
         }).join("");
         return `<button type="button" class="tl-phase ${closed ? "closed" : ""}" data-phase-toggle="${key}" aria-expanded="${!closed}">
           <span class="caret">▾</span>${esc(PHASES[g.phase] || "Other")} · ${g.rows.length} step${g.rows.length === 1 ? "" : "s"}</button>${cards}`;

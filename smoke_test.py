@@ -199,7 +199,7 @@ with TestClient(main.app) as c:
     # --- SOP 7: outside path with quotation approval -----------------------
     t2 = call("POST", "/api/tickets/create", site, 201, "report second machine", {"machine_id": M_OUT})["ticket_id"]
     call("PUT", f"/api/tickets/{t2}/inspect", pm, 200, "P&M in-charge inspects (outside)", {"issue_description": "Engine overhaul", "repair_venue": "outside"})
-    check(tickets()[t2]["status"] == "pending_quotation", "outside inspect opens vendor quote stage")
+    check(tickets()[t2]["status"] == "quotation_requested", "outside inspect waits for vendor quote")
     call(
         "PUT",
         f"/api/tickets/{t2}/quotation-request/message",
@@ -235,7 +235,7 @@ with TestClient(main.app) as c:
     call("PUT", f"/api/tickets/{t2}/approval", pm, 403, "only management approves", {"approved": True})
     call("PUT", f"/api/tickets/{t2}/approval", mgmt, 422, "rejection needs a reason", {"approved": False})
     call("PUT", f"/api/tickets/{t2}/approval", mgmt, 200, "management rejects", {"approved": False, "note": "Too high"})
-    check(tickets()[t2]["status"] == "pending_quotation" and tickets()[t2]["approval_note"] == "Too high", "rejected quote returns to quotation")
+    check(tickets()[t2]["status"] == "quotation_requested" and tickets()[t2]["approval_note"] == "Too high", "rejected quote returns to vendor quote")
     t2_events = c.get(f"/api/tickets/{t2}/events", headers=mgmt).json()
     rej = [e for e in t2_events if e["type"] == "quotation.rejected"]
     check(len(rej) == 1 and rej[0]["tone"] == "problem" and rej[0]["note"] == "Too high", "rejection is a problem event with the bare reason as its note")

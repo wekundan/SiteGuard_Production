@@ -5,7 +5,7 @@ FastAPI + Postgres + single-page mobile web app that follows the plant breakdown
 ## Workflow
 1. **Report** (Sr Civil Engineer or P&M DEO) -> 2. **Inspect and decide** (Mechanical Manager or P&M In-charge): in-house or outside workshop.
 - **In-house:** site store check. Parts available -> repair. Not available -> requisition -> **central store dispatches** -> **site store confirms receipt** -> repair.
-- **Outside:** vendor quote stage (optional follow-up notes + attach quote + details) -> **management approves** (or sends back) -> **mech/PM logs dispatch to vendor** -> repair at vendor -> **mech/PM confirms vehicle received at site** (breakdown cleared and report closed automatically).
+- **Outside:** **vendor quote requested** (optional follow-up notes, attach quote, submit) -> **management approves** (or sends back) -> **mech/PM logs dispatch to vendor** -> repair at vendor -> **mech/PM confirms vehicle received at site** (breakdown cleared and report closed automatically).
 3. Mechanical dept marks the **breakdown cleared** (machine active again). The report **closes automatically**, with the inspection findings as the root cause. Downtime is calculated automatically.
 
 A machine can be reported again once its previous breakdown is cleared, even if the register entry is still open.
@@ -91,7 +91,7 @@ default 330 = IST) when one is entered. Alerts (WhatsApp/email) are not built ye
 on the old layout and says so in the logs (Render then shows a failed GitHub deployment for `siteguard-breakdown-tracker`).
 
 **After pulling workflow changes:** restart or redeploy once so PostgreSQL picks up new `ticket_status` values such as
-Legacy `quotation_requested` tickets are moved to `pending_quotation` on startup.
+Legacy `pending_quotation` tickets are moved to `quotation_requested` on startup.
 
 Notes:
 - Free Render service sleeps after ~15 min idle (first load ~30s). Optional: ping it every 5 min with UptimeRobot.

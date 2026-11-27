@@ -1517,12 +1517,17 @@
     function daysFromNowDate(days) {
       return new Date(Date.now() + days * 86400000).toISOString().split("T")[0];
     }
-    function formatDuration(hours) {
-      const mins = Math.max(0, Math.round((hours || 0) * 60));
-      const h = Math.floor(mins / 60), m = mins % 60;
-      if (h >= 48) return `${Math.floor(h / 24)}d ${h % 24}h`;
-      return h === 0 ? `${m}m` : `${h}h ${m}m`;
+    // ponytail: all durations in hours; under 1h uses decimal hours (e.g. 0.5h).
+    function formatHours(hours) {
+      const n = Number(hours) || 0;
+      const neg = n < 0;
+      const h = Math.abs(n);
+      const dec = h < 1 ? 2 : 1;
+      let s = h.toFixed(dec).replace(/\.?0+$/, "");
+      if (!s) s = "0";
+      return (neg ? "-" : "") + s + "h";
     }
+    const formatDuration = formatHours;
     function formatDateTime(iso) {
       if (!iso) return "—";
       return new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
@@ -1531,15 +1536,7 @@
     const nowMs = () => Date.now() + (state.clockOffset || 0);
     function hoursSince(iso) { return (nowMs() - new Date(iso).getTime()) / 3600000; }
 
-    // Live format: seconds are shown (up to a day) so every clock visibly ticks.
-    function formatLive(hours) {
-      const secs = Math.max(0, Math.floor((hours || 0) * 3600));
-      const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
-      const ss = String(s).padStart(2, "0"), mm = String(m).padStart(2, "0");
-      if (d >= 1) return `${d}d ${h}h ${mm}m`;
-      if (h >= 1) return `${h}h ${mm}m ${ss}s`;
-      return m >= 1 ? `${m}m ${ss}s` : `${s}s`;
-    }
+    const formatLive = formatHours;
     // Spans marked data-live are refreshed every second by tick(); no re-render needed.
     const liveAge = (iso) => `<span data-live="age" data-at="${iso}">${formatLive(hoursSince(iso))}</span>`;
     function liveDowntime(t) {

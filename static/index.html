@@ -2346,9 +2346,7 @@
       const p = e.payload || {};
       const tone = TONE[e.tone] || "amber";
       // A hand-over chip appears only when the ticket changes hands, never as "Moved to <column>".
-      const owner = OWNER[e.to_status];
-      const handed = e.to_status !== "closed" && owner && (!e.from_status || OWNER[e.from_status] !== owner) ? owner : "";
-      return { title: copy.title, label: copy.label || "Note", tone, glyph: TONE_GLYPH[e.tone] || "•", handed };
+      return { title: copy.title, label: copy.label || "Note", tone, glyph: TONE_GLYPH[e.tone] || "•" };
     }
 
     const NOW_TEXT = {
@@ -2418,7 +2416,6 @@
                 <div class="tl-time" title="${esc(formatDateTime(e.created_at))}">${formatDuration(hoursSince(e.created_at))} ago</div>
               </div>
               <div class="tl-by">${esc(who)}</div>
-              ${v.handed ? `<span class="tl-chip">Handed to ${esc(v.handed)}</span>` : ""}
               ${e.note ? `<button type="button" class="tl-more" data-note-toggle="${e.event_id}">${showDetails ? "Hide details" : "View details"}</button>` : ""}
               ${e.note && showDetails ? `<div class="tl-note"><span class="tl-note-label">${esc(v.label)}</span>
                 <blockquote>${esc(e.note)}</blockquote></div>` : ""}
@@ -2426,7 +2423,7 @@
           </div>`;
         }).join("");
         return `<button type="button" class="tl-phase ${closed ? "closed" : ""}" data-phase-toggle="${key}" aria-expanded="${!closed}">
-          <span class="caret">▾</span>${esc(PHASES[g.phase] || "Other")} · ${g.rows.length} step${g.rows.length === 1 ? "" : "s"}</button>${cards}`;
+          <span class="caret">▾</span>${esc(PHASES[g.phase] || "Other")}</button>${cards}`;
       }).join("");
 
       return `${nowCardHtml(t, events)}

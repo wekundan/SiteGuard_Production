@@ -117,6 +117,7 @@ with TestClient(main.app) as c:
     in_transit = [x for x in c.get("/api/bootstrap", headers=store).json()["my_tasks"] if x["ticket_id"] == t1]
     check(len(in_transit) == 1, "in-transit ticket in site store my_tasks")
     call("PUT", f"/api/tickets/{t1}/receive", store, 200, "site store confirms receipt")
+    check(tickets()[t1]["parts_received_note"] == "Received at site", "receipt on ticket card when no GRN")
     call("PUT", f"/api/tickets/{t1}/clear", store, 403, "site store cannot clear breakdown")
     call("PUT", f"/api/tickets/{t1}/clear", mech, 200, "mechanical confirms cleared")
     check(machine_status(M_IN) == "active", "machine active after clearance")
@@ -164,6 +165,7 @@ with TestClient(main.app) as c:
     call("PUT", f"/api/tickets/{a}/local-purchase", mech, 200, "mech confirms parts ordered locally", {"note": "Ordered from Patel Hydraulics", "eta_date": "2030-01-01"})
     check(tickets()[a]["status"] == "in_transit" and tickets()[a]["dispatch_details"].startswith("Ordered locally"), "site store now expects the local parts")
     call("PUT", f"/api/tickets/{a}/receive", store, 200, "site store receives and makes the entry", {"note": "Entry GRN-501"})
+    check(tickets()[a]["parts_received_note"] == "Entry GRN-501", "GRN stored for board display")
     call("PUT", f"/api/tickets/{a}/wrong-parts", site, 403, "site office cannot report wrong parts", {"note": "wrong size"})
     call("PUT", f"/api/tickets/{a}/wrong-parts", mech, 422, "wrong parts needs a proper remark", {"note": "no"})
     call("PUT", f"/api/tickets/{a}/wrong-parts", mech, 200, "mech reports wrong part, exchange asked", {"note": "Seal kit is for another model, exchange requested", "eta_date": "2030-01-02"})

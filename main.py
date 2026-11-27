@@ -192,7 +192,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.10.2")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.10.3")
 
 
 def hash_password(password: str) -> str:
@@ -310,6 +310,7 @@ class Ticket(Base):
     quotation_request_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     vendor_dispatch_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     vehicle_received_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    parts_received_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # site store GRN / receipt
     # ETA of the current stage (spares arrival or vendor completion)
     eta_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     # closure record
@@ -587,6 +588,8 @@ def add_missing_columns() -> None:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN parts_source VARCHAR(10)"))
         if "parts_issue_note" not in cols:
             conn.execute(text("ALTER TABLE tickets ADD COLUMN parts_issue_note TEXT"))
+        if "parts_received_note" not in cols:
+            conn.execute(text("ALTER TABLE tickets ADD COLUMN parts_received_note TEXT"))
         if insp.has_table("ticket_events"):
             ev_cols = {c["name"] for c in insp.get_columns("ticket_events")}
             for name, ddl in (("event_type", "VARCHAR(50)"), ("phase", "VARCHAR(20)"), ("tone", "VARCHAR(10)"), ("payload", "TEXT")):
@@ -865,6 +868,7 @@ class TicketResponse(BaseModel):
     quotation_request_note: Optional[str] = None
     vendor_dispatch_note: Optional[str] = None
     vehicle_received_note: Optional[str] = None
+    parts_received_note: Optional[str] = None
     eta_date: Optional[date] = None
     root_cause: Optional[str] = None
     repair_cost: Optional[float] = None
@@ -1287,6 +1291,7 @@ def receive_spares(
     move_ticket(db, ticket, S.REPAIR_IN_PROGRESS, actor, note=entry or None)
     ticket.eta_date = None
     ticket.parts_issue_note = None  # whatever was wrong has now been replaced
+    ticket.parts_received_note = entry or "Received at site"
     return finish(db, ticket)
 
 
@@ -1312,6 +1317,7 @@ def report_wrong_parts(
     )
     ticket.parts_issue_note = note
     ticket.eta_date = payload.eta_date if target == S.IN_TRANSIT else None
+    ticket.parts_received_note = None
     return finish(db, ticket)
 
 

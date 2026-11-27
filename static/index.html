@@ -381,11 +381,6 @@
       background: #f4f5f7 !important;
       color: var(--muted);
     }
-    html.theme-dark #toast-box {
-      background: rgba(14, 19, 28, 0.95);
-      border: 1px solid rgba(34, 211, 238, 0.25);
-      color: #e8ecf3;
-    }
     body.signed-in .login-shell { display: none; }
 
     /* ---- light mode (signed-in app + chrome) ---- */
@@ -736,9 +731,9 @@
 
     .tick { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #0f766e; color: #fff; font-size: .8rem; font-weight: 700; flex-shrink: 0; }
     .tick.big { width: 34px; height: 34px; font-size: 1.1rem; }
-    .ack { display: flex; gap: .6rem; align-items: flex-start; padding: .65rem .8rem; border-radius: 12px; background: #e6f5ef; color: #0b5a46; font-size: .85rem; font-weight: 600; margin-bottom: .9rem; }
+    .ack { display: flex; gap: .6rem; align-items: flex-start; padding: .65rem .8rem; border-radius: 12px; background: #e6f5ef; border: 1px solid #b9e0d2; color: #0b5a46; font-size: .85rem; font-weight: 600; margin-bottom: .9rem; }
     .ack small { display: block; font-weight: 500; color: #3f7a68; font-size: .75rem; margin-top: .1rem; }
-    .err { display: flex; gap: .6rem; align-items: flex-start; padding: .65rem .8rem; border-radius: 12px; background: #fdeef1; color: #9f1239; font-size: .85rem; font-weight: 600; margin-bottom: .9rem; }
+    .err { display: flex; gap: .6rem; align-items: flex-start; padding: .65rem .8rem; border-radius: 12px; background: #fdeef1; border: 1px solid #f4c2cb; color: #9f1239; font-size: .85rem; font-weight: 600; margin-bottom: .9rem; }
 
     .progress { display: flex; gap: 4px; margin-top: .85rem; }
     .progress i { flex: 1; height: 5px; border-radius: 99px; background: #e6e3dc; transition: background .3s; }
@@ -746,6 +741,34 @@
     .progress i.cur { background: var(--accent); }
     .progress-cap { font-size: .7rem; color: var(--muted); margin-top: .35rem; display: flex; justify-content: space-between; gap: .5rem; }
     .upload-done { display: flex; gap: .6rem; align-items: center; padding: .7rem .8rem; border-radius: 12px; background: #eef8f4; border: 1px solid #b9e0d2; }
+    .upload-done-title { font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: #0f766e; }
+    .upload-done-filename { color: #1e293b; font-weight: 500; line-height: 1.35; }
+    .status-ok { font-size: .875rem; font-weight: 600; color: #0f766e; line-height: 1.4; }
+    .status-warn { font-size: .875rem; font-weight: 600; color: #be123c; line-height: 1.4; }
+    .pending-file-name { font-size: .875rem; margin-top: .5rem; color: #0f766e; font-weight: 500; }
+    html.theme-dark body.signed-in .upload-done {
+      background: rgba(45, 212, 191, 0.1);
+      border-color: rgba(45, 212, 191, 0.3);
+    }
+    html.theme-dark body.signed-in .upload-done-title { color: #5eead4; }
+    html.theme-dark body.signed-in .upload-done-filename { color: #e8ecf3; }
+    html.theme-dark body.signed-in .status-ok,
+    html.theme-dark body.signed-in .pending-file-name { color: #5eead4; }
+    html.theme-dark body.signed-in .ack {
+      background: rgba(45, 212, 191, 0.12);
+      border: 1px solid rgba(45, 212, 191, 0.28);
+      color: #a7f3d0;
+    }
+    html.theme-dark body.signed-in .ack small { color: #94a3b8; }
+    html.theme-dark body.signed-in .err {
+      background: rgba(251, 113, 133, 0.12);
+      border: 1px solid rgba(251, 113, 133, 0.35);
+      color: #fecdd3;
+    }
+    html.theme-dark body.signed-in .card.done {
+      border-color: rgba(45, 212, 191, 0.35);
+      background: rgba(45, 212, 191, 0.08);
+    }
     .remark-bubble.sending { opacity: .6; }
     .remark-bubble.sending::after { content: " · sending…"; font-size: .7rem; color: var(--muted); }
     @media (prefers-reduced-motion: reduce) {
@@ -1223,12 +1246,6 @@
     </div>
   </div>
 
-  <div id="toast-container" class="hidden fixed bottom-5 inset-x-0 z-40 px-4 pointer-events-none">
-    <div id="toast-box" class="pointer-events-auto max-w-md mx-auto flex items-center justify-between gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-medium">
-      <span id="toast-message"></span>
-      <button id="btn-close-toast" type="button" class="text-xs opacity-70 hover:opacity-100" aria-label="Dismiss">✕</button>
-    </div>
-  </div>
 
   <section id="login-view" class="login-shell">
     <div id="login-hero" class="login-hero" role="region" aria-label="Heavy construction and trucking fleet on site">
@@ -1297,6 +1314,7 @@
             <label for="select-machine" class="label block mb-2">Machine</label>
             <select id="select-machine" class="field" style="padding:.9rem .9rem; font-weight:600;"></select>
           </div>
+          <div id="report-error" class="hidden text-sm font-medium" style="color:#fb7185;"></div>
           <button id="btn-submit-breakdown" type="submit" class="btn btn-alert" style="padding:1.1rem 1rem; font-size:1rem; border-radius:14px;">Report breakdown</button>
         </form>
       </div>
@@ -1385,7 +1403,7 @@
     const STATUS = {
       pending_inspection: { label: "Awaiting inspection", tone: "t-amber" },
       pending_parts_check: { label: "Checking site store stock", tone: "t-sky" },
-      pending_dispatch: { label: "Central parts desk", tone: "t-violet" },
+      pending_dispatch: { label: "Awaiting central store", tone: "t-violet" },
       pending_local_purchase: { label: "Buy parts at site", tone: "t-amber" },
       in_transit: { label: "Parts on the way", tone: "t-indigo" },
       quotation_requested: { label: "Vendor quote requested", tone: "t-amber" },
@@ -1546,7 +1564,7 @@
 
     // Who picks the ticket up next, shown in the success confirmation.
     const OWNER = {
-      pending_inspection: "Mechanical Manager", pending_parts_check: "Mechanical Manager", pending_dispatch: "Central parts desk",
+      pending_inspection: "Mechanical Manager", pending_parts_check: "Mechanical Manager", pending_dispatch: "Central store",
       pending_local_purchase: "Mechanical Manager", in_transit: "Site store", quotation_requested: "Mechanical Manager", pending_quotation: "Mechanical Manager",
       pending_approval: "Management", pending_vendor_dispatch: "Mechanical Manager", vendor_repair_in_progress: "Mechanical Manager",
       repair_in_progress: "Mechanical Manager", cleared: "P&M In-charge", closed: "Complete"
@@ -1577,24 +1595,6 @@
       const cap = closed ? "Breakdown closed" : `Now: ${flow.steps[at]}`;
       return `<div class="progress" aria-hidden="true">${segs}</div>
         <div class="progress-cap"><span>${esc(cap)}</span><span>${closed ? "" : "Up next: " + esc(flow.steps[at + 1] || "Done")}</span></div>`;
-    }
-
-    function showToast(message, isError = false) {
-      $("toast-message").textContent = message;
-      const box = $("toast-box");
-      const dark = currentTheme() === "dark";
-      if (isError) {
-        box.style.background = dark ? "#7f1d33" : "#fff1f3";
-        box.style.color = dark ? "#fff" : "#9f1239";
-        box.style.border = dark ? "" : "1px solid #f4c2cb";
-      } else {
-        box.style.background = "";
-        box.style.color = "";
-        box.style.border = "";
-      }
-      $("toast-container").classList.remove("hidden");
-      clearTimeout(showToast.timer);
-      showToast.timer = setTimeout(() => $("toast-container").classList.add("hidden"), 4000);
     }
 
     // ========================================================================
@@ -1670,7 +1670,6 @@
           Object.keys(state.drafts).filter((k) => k.startsWith(ticketId + ":")).forEach((k) => delete state.drafts[k]);
           Object.keys(state.choices).filter((k) => k.startsWith(ticketId + ":")).forEach((k) => delete state.choices[k]);
         }
-        showToast(successMessage);
         // Keep the ticket the server returned: roles that cannot see every ticket still need it to confirm where it went next.
         if (ticketId) state.acks[ticketId] = { message: successMessage, index: Math.max(index, 0), played: false, ticket: result && result.ticket_id === ticketId ? result : null };
         delete state.busy[ticketId];
@@ -1682,7 +1681,6 @@
         }
         return true;
       } catch (e) {
-        showToast(e.message, true);
         if (ticketId) {
           state.cardErrors[ticketId] = e.message;
           delete state.busy[ticketId];
@@ -2015,23 +2013,23 @@
       if (attached.length) {
         // Already done: show it as completed instead of a live input (remove it from the Files list to replace it).
         return `<div class="upload-done"><span class="tick">✓</span><div class="min-w-0">
-          <div class="label" style="color:#0b6b52;">${esc(UPLOAD_NAME[kind] || "File")} attached</div>
-          <div class="text-sm truncate">${attached.map((f) => esc(f.filename)).join(", ")}</div></div></div>`;
+          <div class="upload-done-title">${esc(UPLOAD_NAME[kind] || "File")} attached</div>
+          <div class="upload-done-filename text-sm truncate">${attached.map((f) => esc(f.filename)).join(", ")}</div></div></div>`;
       }
       return `<div class="upload-box">
         <div class="label mb-2">${label}</div>
         <input type="file" data-${defer ? "deferred-upload" : "upload"}="${t.ticket_id}:${kind}" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
           class="field upload-input" />
         ${defer && state.pendingUploads[`${t.ticket_id}:${kind}`]
-          ? `<div class="text-sm mt-2" style="color:#0b6b52;">${esc(state.pendingUploads[`${t.ticket_id}:${kind}`].name)}</div>`
+          ? `<div class="pending-file-name">${esc(state.pendingUploads[`${t.ticket_id}:${kind}`].name)}</div>`
           : ""}
       </div>`;
     };
     const dispatchAttachStatus = (t) => {
       const n = (t.files || []).filter((f) => f.kind === "dispatch").length;
       return n
-        ? `<div class="text-sm font-medium" style="color:#0b6b52;">${n} dispatch file(s) attached — you can confirm dispatch below.</div>`
-        : `<div class="text-sm font-semibold" style="color:#be123c;">Step 1: choose a dispatch PDF/photo in the box below.</div>`;
+        ? `<div class="status-ok">${n} dispatch file(s) attached — you can confirm dispatch below.</div>`
+        : `<div class="status-warn">Attach a dispatch PDF or photo in the box below first.</div>`;
     };
     const quotationFilesOnTicket = (t) => (t.files || []).filter((f) => f.kind === "quotation");
 
@@ -2041,7 +2039,7 @@
       if (!list.length) return "";
       return `<div class="space-y-1 mt-2">${list
         .map(
-          (f, i) => `<div class="text-sm flex items-center justify-between gap-2" style="color:#0b6b52;">
+          (f, i) => `<div class="text-sm flex items-center justify-between gap-2 status-ok">
             <span class="truncate">Selected: ${esc(f.name)}</span>
             <button type="button" data-pending-key="${key}" data-pending-index="${i}" class="text-xs font-semibold shrink-0" style="color:#be123c;">Remove</button>
           </div>`
@@ -2126,7 +2124,7 @@
           const stock = choiceVal(t, "parts");
           let body = `${lbl("Next step")}${stepSelect(t, "parts", "After checking the site store shelves…", [
             { value: "available", label: "We have the parts — start workshop repair" },
-            { value: "missing", label: "Not in stock — request from central desk" }
+            { value: "missing", label: "Not in stock — request from central store" }
           ])}`;
           if (stock === "missing") {
             body += `<div class="space-y-2.5 mt-2.5">${input(t, "parts", 'placeholder="Part numbers, quantities, and machine model if needed"', "textarea")}
@@ -2139,7 +2137,7 @@
         case "pending_dispatch": {
           const central = choiceVal(t, "central");
           let body = `${lbl("Next step")}${stepSelect(t, "central", "How will these parts reach site?", [
-            { value: "dispatch", label: "Dispatch from central parts desk" },
+            { value: "dispatch", label: "Dispatch from central store" },
             { value: "local", label: "Ask mechanical team to buy locally" }
           ])}`;
           if (central === "dispatch") {
@@ -2159,14 +2157,14 @@
           return body;
         }
         case "pending_local_purchase":
-          return `<div class="text-[13px]" style="color:var(--muted);">Central parts desk asked you to purchase on site. Place the order, then tell the site store when to expect delivery.</div>
+          return `<div class="text-[13px]" style="color:var(--muted);">Central store asked you to purchase on site. Place the order, then tell the site store when to expect delivery.</div>
             ${input(t, "localorder", 'placeholder="Vendor or shop, PO/bill number, what was ordered"', "textarea")}
             <div>${lbl("Expected on site by")}<input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta") || daysFromNowDate(2)}" class="field" /></div>
             ${btn("local_ordered", t, "Parts ordered — notify site store", "primary")}`;
         case "in_transit":
           return `<div class="text-[13px]" style="color:var(--muted);">${t.parts_source === "local"
             ? "Parts bought locally are on the way. Log the GRN when they arrive in the site store."
-            : "Central desk dispatched these parts. Log the GRN when they arrive in the site store."}</div>
+            : "Central store dispatched these parts. Log the GRN when they arrive in the site store."}</div>
             ${input(t, "grn", 'placeholder="GRN or store entry number (optional)"')}
             ${btn("receive", t, "Log receipt in site store", "success")}`;
         case "quotation_requested":
@@ -2331,7 +2329,7 @@
     const NOW_TEXT = {
       pending_inspection: "Mechanical Manager has not finished the inspection yet",
       pending_parts_check: "Checking whether the site store has the needed spares",
-      pending_dispatch: (t) => t.parts_issue_note ? "Central desk is arranging replacement parts after a wrong delivery" : "Central parts desk will dispatch or ask site to buy locally",
+      pending_dispatch: (t) => t.parts_issue_note ? "Central store is arranging replacement parts after a wrong delivery" : "Central store will dispatch or ask site to buy locally",
       pending_local_purchase: "Mechanical team is placing a local purchase order",
       in_transit: "Parts are travelling to site — site store will log GRN on arrival",
       quotation_requested: "Get the vendor quote, then attach it and send to management",
@@ -2519,14 +2517,11 @@
       const el = document.querySelector(`[data-draft="${id}:${name}"]`);
       return el ? el.value.trim() : "";
     }
-    function fail(msg) { showToast(msg, true); }
-
     async function runTaskAction(action, id) {
       if (state.busy[id]) return; // already saving this card: ignore repeat clicks
-      // Validation problems show inside the card as well as in the toast, right where the user is looking.
+      // Validation problems show inside the card (err banner), not a floating toast.
       const fail = (msg) => {
         state.cardErrors[id] = msg;
-        showToast(msg, true);
         renderAll();
       };
       delete state.cardErrors[id];
@@ -2543,8 +2538,8 @@
           return act(put("parts-check", { available: true }), "Spares available. Repair started.", id);
         case "parts_missing": {
           const parts = field(id, "parts");
-          if (!parts) return fail("List the parts needed from the central desk.");
-          return act(put("parts-check", { available: false, parts_required: parts }), "Parts request sent to central desk.", id);
+          if (!parts) return fail("List the parts needed from the central store.");
+          return act(put("parts-check", { available: false, parts_required: parts }), "Parts request sent to central store.", id);
         }
         case "dispatch": {
           const t = state.tickets.find((x) => x.ticket_id === id);
@@ -2662,10 +2657,9 @@
       if (!confirm("Remove this attachment?")) return;
       try {
         await apiRequest("DELETE", `/api/files/${fileId}`);
-        showToast("Attachment removed.");
         await refreshFromServer();
       } catch (e) {
-        showToast(e instanceof ApiError ? e.message : "Could not remove the file.", true);
+        // File list refreshes on next open; no global toast.
       }
     }
 
@@ -2720,7 +2714,6 @@
         a.download = name;
         a.click();
         URL.revokeObjectURL(obj);
-        showToast(`Downloaded ${name}`);
       } catch (e) {
         fail(e.message || "Could not download CSV.");
       }
@@ -2783,7 +2776,6 @@
         }
         if (e.target.matches("[data-upload]")) uploadFile(e.target);
       });
-      $("btn-close-toast").addEventListener("click", () => $("toast-container").classList.add("hidden"));
 
       $("nav-tabs").addEventListener("click", (e) => {
         const b = e.target.closest("[data-view-tab]");
@@ -2832,17 +2824,20 @@
         if (!machine || machine.status !== "active" || state.busy.report) return;
         state.busy.report = true; // disables the button and shows "Reporting…" so it cannot be sent twice
         state.reportAck = null;
+        const reportErr = $("report-error");
+        reportErr.classList.add("hidden");
+        reportErr.textContent = "";
         renderReport();
         try {
           const created = await apiRequest("POST", "/api/tickets/create", { machine_id: machine.machine_id });
           state.reportAck = { name: machine.name, machineId: machine.machine_id, ticket: created };
-          showToast(`Breakdown reported for ${machine.name}`);
           delete state.busy.report;
           await refreshFromServer();
           clearTimeout(state.reportAckTimer);
           state.reportAckTimer = setTimeout(() => { state.reportAck = null; if (state.activeView === "report") renderReport(); }, 10000);
         } catch (err) {
-          showToast(err.message, true);
+          reportErr.textContent = err.message;
+          reportErr.classList.remove("hidden");
           delete state.busy.report;
           if (err.status !== 401) await refreshFromServer().catch(() => {});
         }
@@ -2904,7 +2899,7 @@
           try {
             state.history[id] = await apiRequest("GET", `/api/tickets/${id}/events`);
             renderBoard();
-          } catch (err) { showToast(err.message, true); }
+          } catch (err) { /* history stays closed; user can retry */ }
         }
       });
 

@@ -2001,8 +2001,11 @@
     const choiceVal = (t, field) => state.choices[`${t.ticket_id}:${field}`] || "";
     const stepSelect = (t, field, placeholder, options) => {
       const cur = choiceVal(t, field);
+      const placeholderOpt = cur
+        ? ""
+        : `<option value="" disabled selected hidden>${esc(placeholder)}</option>`;
       const opts =
-        `<option value="">${esc(placeholder)}</option>` +
+        placeholderOpt +
         options.map((o) => `<option value="${esc(o.value)}"${cur === o.value ? " selected" : ""}>${esc(o.label)}</option>`).join("");
       return `<select data-choice="${t.ticket_id}:${field}" class="field">${opts}</select>`;
     };

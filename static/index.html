@@ -292,7 +292,7 @@
     /* machine history table — fixed columns, readable on dark dashboard */
     .mh-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 4.75rem 6.25rem 7.25rem;
+      grid-template-columns: minmax(0, 1fr) 5.5rem 7rem;
       column-gap: 1rem;
       align-items: center;
       padding: 0.65rem 1.25rem;
@@ -301,7 +301,7 @@
     }
     @media (max-width: 420px) {
       .mh-grid {
-        grid-template-columns: minmax(0, 1fr) 3.25rem 5rem 5.5rem;
+        grid-template-columns: minmax(0, 1fr) 3.5rem 5.5rem;
         column-gap: 0.5rem;
         padding-left: 0.85rem;
         padding-right: 0.85rem;
@@ -2058,7 +2058,6 @@
         return (r === "mech_engineer" || r === "pm_incharge") && (t.status === "pending_quotation" || (t.status === "quotation_requested" && t.quotation_request_note));
       if (f.kind === "quotation_request")
         return (r === "mech_engineer" || r === "pm_incharge") && t.status === "quotation_requested";
-      if (f.kind === "bill") return r === "pm_incharge" && t.status === "cleared" && t.repair_venue === "outside";
       return false;
     }
 
@@ -2093,8 +2092,6 @@
       if (t.approval_note) rows.push(`<div class="rounded-lg px-3 py-2 mt-1" style="background:#fdeef1; color:#9f1239;"><strong>Management note:</strong> ${esc(t.approval_note)}</div>`);
       if (t.root_cause) row("Root cause", esc(t.root_cause));
       if (t.invoice_number) row("Invoice", esc(t.invoice_number));
-      if (t.repair_cost != null) row("Repair cost", inr(t.repair_cost));
-      if (t.cost_over_quote) rows.push(`<div class="rounded-lg px-3 py-2 mt-1" style="background:#fdeef1; color:#9f1239;"><strong>${inr(t.cost_over_quote)} over</strong> the approved quotation.</div>`);
       return rows.length ? `<div class="text-[13px] space-y-1 mt-3">${rows.join("")}</div>` : "";
     }
 
@@ -2236,16 +2233,6 @@
           }
           return body;
         }
-        case "cleared": {
-          const outside = t.repair_venue === "outside";
-          return `<div class="text-[13px]" style="color:var(--muted);">Downtime: <strong style="color:var(--ink);">${liveDowntime(t)}</strong>. Log the closure record.${
-            outside && t.quote_amount != null ? ` Approved quotation: <strong style="color:var(--ink);">${inr(t.quote_amount)}</strong>.` : ""}</div>
-            ${input(t, "root", 'placeholder="Root cause"', "textarea")}
-            ${outside ? upload(t, "bill", "Vendor bill: PDF or photo, max 5 MB (required)") + input(t, "invoice", 'placeholder="Invoice number (optional)"') : ""}
-            <input data-draft="${t.ticket_id}:cost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="${outside ? "Final billed amount (₹)" : "Total repair cost (₹)"}" value="${dv(t, "cost")}" class="field" />
-            ${input(t, "cnotes", 'placeholder="Notes (optional)"')}
-            ${btn("close", t, "Close report", "primary")}`;
-        }
         default:
           return "";
       }
@@ -2376,7 +2363,6 @@
       pending_vendor_dispatch: "Quotation approved. Mechanical team to send the machine to the vendor",
       vendor_repair_in_progress: "Machine is at the vendor workshop for repair",
       repair_in_progress: "Repair in progress at site",
-      cleared: "Breakdown cleared. Closure record pending",
       closed: "Report closed"
     };
 
@@ -2483,8 +2469,7 @@
           .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         return {
           m, list,
-          downtime: list.reduce((s, t) => s + (t.downtime_hours || 0), 0),
-          cost: list.reduce((s, t) => s + (t.repair_cost || 0), 0)
+          downtime: list.reduce((s, t) => s + (t.downtime_hours || 0), 0)
         };
       }).sort((a, b) => b.list.length - a.list.length || a.m.name.localeCompare(b.m.name));
 
@@ -2493,8 +2478,8 @@
         `${total} breakdown${total === 1 ? "" : "s"} across ${rows.filter((r) => r.list.length).length} of ${rows.length} machines. Tap a machine to see its repairs.`;
 
       const head = `<div class="mh-head mh-grid label" role="row">
-        <span>Machine</span><span class="mh-num">Breakdowns</span><span class="mh-num">Downtime</span><span class="mh-num">Cost</span></div>`;
-      $("machine-history").innerHTML = head + rows.map(({ m, list, downtime, cost }) => {
+        <span>Machine</span><span class="mh-num">Breakdowns</span><span class="mh-num">Downtime</span></div>`;
+      $("machine-history").innerHTML = head + rows.map(({ m, list, downtime }) => {
         const open = !!state.openMachine[m.machine_id];
         const detail = open
           ? `<div class="mh-detail space-y-2">${
@@ -2511,7 +2496,6 @@
                   </div>
                   <div class="mh-detail-stats">
                     <span>Downtime <strong>${formatDuration(t.downtime_hours)}</strong></span>
-                    <span>Cost <strong>${t.repair_cost != null ? inr(t.repair_cost) : "—"}</strong></span>
                   </div>
                 </div>`).join("")}</div>`
           : "";
@@ -2524,7 +2508,6 @@
             </span>
             <span class="${countCls}">${list.length}</span>
             <span class="mh-num mh-muted">${list.length ? formatDuration(downtime) : "—"}</span>
-            <span class="mh-num mh-muted">${cost ? inr(cost) : "—"}</span>
           </button>${detail}</div>`;
       }).join("");
     }
@@ -2542,8 +2525,7 @@
       $("kpi-row").innerHTML =
         kpi("Machines down", mt.total_machines_broken, "#fb7185", `of ${state.machines.length} in fleet`) +
         kpi("Past SLA", pastSla, pastSla ? "#fb7185" : "#2dd4bf", pastSla ? "needs attention" : "all on track") +
-        kpi("Avg downtime", mt.average_downtime_hours == null ? "—" : formatDuration(mt.average_downtime_hours), "#22d3ee", `${mt.cleared_tickets} cleared`) +
-        kpi("Repair cost", inr(mt.total_repair_cost), "#a5b4fc", `${mt.closed_tickets} closed`);
+        kpi("Avg downtime", mt.average_downtime_hours == null ? "—" : formatDuration(mt.average_downtime_hours), "#22d3ee", `${mt.closed_tickets} closed`);
       $("stage-table").innerHTML = STAGE_ORDER.map((s) => {
         const over = mt.overdue_by_stage[s] || 0;
         const avg = mt.stage_average_hours[s];
@@ -2682,15 +2664,7 @@
           return act(put("vehicle-receive", { note }), "Vehicle received. Breakdown closed; machine is active.", id);
         }
         case "clear":
-          return act(put("clear", null), "Breakdown cleared. Machine is active again.", id);
-        case "close": {
-          const t = state.tickets.find((x) => x.ticket_id === id);
-          const root = field(id, "root"), cost = parseFloat(field(id, "cost"));
-          if (root.length < 3) return fail("Enter the root cause.");
-          if (t && t.repair_venue === "outside" && !t.files.some((f) => f.kind === "bill")) return fail("Attach the vendor bill first.");
-          if (!(cost >= 0)) return fail("Enter the total repair cost (0 if none).");
-          return act(put("close", { root_cause: root, repair_cost: cost, invoice_number: field(id, "invoice") || null, closure_notes: field(id, "cnotes") || null }), "Report closed.", id);
-        }
+          return act(put("clear", null), "Breakdown cleared. Machine is active again. Report closed.", id);
       }
     }
 

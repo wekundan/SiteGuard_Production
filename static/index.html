@@ -1306,11 +1306,11 @@
 
     <section id="view-board" class="space-y-4 hidden">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <h2 class="serif text-2xl" style="color: var(--navy);">All breakdowns</h2>
+        <h2 class="serif text-2xl" style="color: var(--navy);">Fleet board — all breakdowns</h2>
         <div class="flex flex-wrap items-center gap-2">
           <button type="button" data-csv-export="tickets" class="btn btn-outline btn-sm">Breakdowns CSV</button>
           <button type="button" data-csv-export="events" class="btn btn-outline btn-sm">Activity log CSV</button>
-          <label class="text-xs font-medium flex items-center gap-2" style="color: var(--muted);"><input id="board-show-closed" type="checkbox" class="rounded" /> Show closed</label>
+          <label class="text-xs font-medium flex items-center gap-2" style="color: var(--muted);"><input id="board-show-closed" type="checkbox" class="rounded" /> Include closed breakdowns</label>
         </div>
       </div>
       <div id="board-list" class="space-y-4"></div>
@@ -1318,7 +1318,7 @@
 
     <section id="view-dashboard" class="space-y-5 hidden">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <h2 class="serif text-2xl" style="color: var(--navy);">Dashboard</h2>
+        <h2 class="serif text-2xl" style="color: var(--navy);">Fleet overview</h2>
         <div class="flex flex-wrap items-center gap-2">
           <button type="button" data-csv-export="machines" class="btn btn-outline btn-sm">Machine summary CSV</button>
           <button type="button" data-csv-export="stages" class="btn btn-outline btn-sm">Stage metrics CSV</button>
@@ -1326,9 +1326,9 @@
       </div>
       <div id="kpi-row" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
       <div class="card overflow-hidden">
-        <div class="px-5 py-4" style="border-bottom:1px solid var(--line);"><span class="label">Where breakdowns are stuck</span></div>
+        <div class="px-5 py-4" style="border-bottom:1px solid var(--line);"><span class="label">Open breakdowns by workflow step</span></div>
         <div class="overflow-x-auto"><table class="w-full text-left text-sm">
-          <thead><tr class="label dashboard-table-head"><th class="py-3 px-5 font-semibold">Stage</th><th class="py-3 px-4 text-right font-semibold">Open</th><th class="py-3 px-4 text-right font-semibold">Past SLA</th><th class="py-3 px-5 text-right font-semibold">Avg time</th></tr></thead>
+          <thead><tr class="label dashboard-table-head"><th class="py-3 px-5 font-semibold">Workflow step</th><th class="py-3 px-4 text-right font-semibold">Open</th><th class="py-3 px-4 text-right font-semibold">Overdue</th><th class="py-3 px-5 text-right font-semibold">Avg hours here</th></tr></thead>
           <tbody id="stage-table"></tbody>
         </table></div>
       </div>
@@ -1383,18 +1383,18 @@
     }
 
     const STATUS = {
-      pending_inspection: { label: "Needs inspection", tone: "t-amber" },
-      pending_parts_check: { label: "Site store check", tone: "t-sky" },
-      pending_dispatch: { label: "Awaiting central store", tone: "t-violet" },
-      pending_local_purchase: { label: "Purchase parts locally", tone: "t-amber" },
-      in_transit: { label: "Spares in transit", tone: "t-indigo" },
-      quotation_requested: { label: "Quotation pending / requested", tone: "t-amber" },
-      pending_quotation: { label: "Vendor quotation", tone: "t-sky" },
-      pending_approval: { label: "Awaiting approval", tone: "t-violet" },
+      pending_inspection: { label: "Awaiting inspection", tone: "t-amber" },
+      pending_parts_check: { label: "Checking site store stock", tone: "t-sky" },
+      pending_dispatch: { label: "Central parts desk", tone: "t-violet" },
+      pending_local_purchase: { label: "Buy parts at site", tone: "t-amber" },
+      in_transit: { label: "Parts on the way", tone: "t-indigo" },
+      quotation_requested: { label: "Vendor quote requested", tone: "t-amber" },
+      pending_quotation: { label: "Quote ready to submit", tone: "t-sky" },
+      pending_approval: { label: "Awaiting management OK", tone: "t-violet" },
       pending_vendor_dispatch: { label: "Send machine to vendor", tone: "t-amber" },
       vendor_repair_in_progress: { label: "At vendor workshop", tone: "t-blue" },
-      repair_in_progress: { label: "Repair in progress", tone: "t-blue" },
-      cleared: { label: "Cleared, record pending", tone: "t-green" },
+      repair_in_progress: { label: "Workshop repair on site", tone: "t-blue" },
+      cleared: { label: "Machine ready (closing)", tone: "t-green" },
       closed: { label: "Closed", tone: "t-gray" }
     };
     const STAGE_ORDER = Object.keys(STATUS).filter((s) => s !== "closed");
@@ -1416,7 +1416,7 @@
       head_office: ["pending_dispatch"],
       management: ["pending_approval"]
     };
-    const VIEW_LABEL = { report: "Report", tasks: "My tasks", board: "Board", dashboard: "Dashboard" };
+    const VIEW_LABEL = { report: "Report breakdown", tasks: "My work queue", board: "Fleet board", dashboard: "Overview" };
 
     function viewsFor(role) {
       const r = effectiveRole(role);
@@ -1546,24 +1546,24 @@
 
     // Who picks the ticket up next, shown in the success confirmation.
     const OWNER = {
-      pending_inspection: "Mechanical team", pending_parts_check: "Mechanical team", pending_dispatch: "Central store",
-      pending_local_purchase: "Mechanical team", in_transit: "Site store", quotation_requested: "Mechanical team", pending_quotation: "Mechanical team",
-      pending_approval: "Management", pending_vendor_dispatch: "Mechanical team", vendor_repair_in_progress: "Mechanical team",
-      repair_in_progress: "Mechanical team", cleared: "P&M In-charge", closed: "Nobody — complete"
+      pending_inspection: "Mechanical Manager", pending_parts_check: "Mechanical Manager", pending_dispatch: "Central parts desk",
+      pending_local_purchase: "Mechanical Manager", in_transit: "Site store", quotation_requested: "Mechanical Manager", pending_quotation: "Mechanical Manager",
+      pending_approval: "Management", pending_vendor_dispatch: "Mechanical Manager", vendor_repair_in_progress: "Mechanical Manager",
+      repair_in_progress: "Mechanical Manager", cleared: "P&M In-charge", closed: "Complete"
     };
 
     // Progress bar per repair route: steps before the current one are done.
     const FLOW = {
       in_house: {
-        steps: ["Reported", "Inspection", "Parts", "Repair", "Cleared", "Closed"],
+        steps: ["Reported", "Inspection", "Spares", "Workshop repair", "Machine ready", "Closed"],
         at: { pending_inspection: 1, pending_parts_check: 2, pending_dispatch: 2, pending_local_purchase: 2, in_transit: 2, repair_in_progress: 3, cleared: 4, closed: 5 }
       },
       outside: {
-        steps: ["Reported", "Inspection", "Quotation", "Approval", "Vendor repair", "Cleared", "Closed"],
+        steps: ["Reported", "Inspection", "Vendor quote", "Management OK", "Off-site repair", "Machine ready", "Closed"],
         at: { pending_inspection: 1, quotation_requested: 2, pending_quotation: 2, pending_approval: 3, pending_vendor_dispatch: 4, vendor_repair_in_progress: 4, cleared: 5, closed: 6 }
       },
       unknown: {
-        steps: ["Reported", "Inspection", "Repair", "Cleared", "Closed"],
+        steps: ["Reported", "Inspection", "Repair", "Machine ready", "Closed"],
         at: { pending_inspection: 1, cleared: 3, closed: 4 }
       }
     };
@@ -1574,9 +1574,9 @@
       if (at == null) return "";
       const closed = t.status === "closed";
       const segs = flow.steps.map((_, i) => `<i class="${i < at || closed ? "done" : i === at ? "cur" : ""}"></i>`).join("");
-      const cap = closed ? "Complete" : `Step ${at + 1} of ${flow.steps.length} · ${flow.steps[at]}`;
+      const cap = closed ? "Breakdown closed" : `Now: ${flow.steps[at]}`;
       return `<div class="progress" aria-hidden="true">${segs}</div>
-        <div class="progress-cap"><span>${esc(cap)}</span><span>${closed ? "" : "Next: " + esc(flow.steps[at + 1] || "Done")}</span></div>`;
+        <div class="progress-cap"><span>${esc(cap)}</span><span>${closed ? "" : "Up next: " + esc(flow.steps[at + 1] || "Done")}</span></div>`;
     }
 
     function showToast(message, isError = false) {
@@ -1948,8 +1948,8 @@
       const stats = [
         { l: "Fleet active", v: `${active}/${state.machines.length}`, tone: active === state.machines.length ? "ok" : "warn" },
         { l: "Machines down", v: String(broken), tone: broken ? "bad" : "ok" },
-        { l: "Open cases", v: String(open), tone: open ? "warn" : "ok" },
-        { l: "Past SLA", v: String(sla), tone: sla ? "bad" : "ok" },
+        { l: "Open breakdowns", v: String(open), tone: open ? "warn" : "ok" },
+        { l: "Overdue steps", v: String(sla), tone: sla ? "bad" : "ok" },
       ];
       el.innerHTML = stats.map((s) =>
         `<div class="fleet-stat fleet-stat--${s.tone}"><span class="fleet-stat-val">${esc(s.v)}</span><span class="fleet-stat-lbl">${s.l}</span></div>`).join("");
@@ -2009,7 +2009,7 @@
         options.map((o) => `<option value="${esc(o.value)}"${cur === o.value ? " selected" : ""}>${esc(o.label)}</option>`).join("");
       return `<select data-choice="${t.ticket_id}:${field}" class="field">${opts}</select>`;
     };
-    const UPLOAD_NAME = { dispatch: "Dispatch file", bill: "Vendor bill" };
+    const UPLOAD_NAME = { dispatch: "Dispatch document", bill: "Vendor invoice" };
     const upload = (t, kind, label, defer = false) => {
       const attached = defer ? [] : (t.files || []).filter((f) => f.kind === kind);
       if (attached.length) {
@@ -2066,20 +2066,20 @@
 
     function ticketDetails(t) {
       const rows = [];
-      const row = (k, v) => rows.push(`<div class="flex gap-2"><span class="shrink-0" style="color:var(--muted); min-width:5.2rem;">${k}</span><span>${v}</span></div>`);
-      if (t.issue_description) row("Issue", esc(t.issue_description));
-      if (t.repair_venue) row("Repair", t.repair_venue === "in_house" ? "In-house workshop" : "Outside workshop");
-      if (t.parts_required) row("Parts", esc(t.parts_required));
-      if (t.dispatch_details) row("Parts status", esc(t.dispatch_details));
-      if (t.parts_received_note) row("Store receipt", esc(t.parts_received_note));
-      if (t.parts_issue_note) rows.push(`<div class="rounded-lg px-3 py-2 mt-1" style="background:#fdeef1; color:#9f1239;"><strong>Wrong parts reported:</strong> ${esc(t.parts_issue_note)}</div>`);
-      if (t.vendor_dispatch_note) row("Vendor dispatch", esc(t.vendor_dispatch_note));
-      if (t.vehicle_received_note) row("Received at site", esc(t.vehicle_received_note));
-      if (t.vendor_name) row("Vendor", `${esc(t.vendor_name)} — <strong>${inr(t.quote_amount)}</strong>${t.quote_details ? ` <span style="color:var(--muted);">(${esc(t.quote_details)})</span>` : ""}`);
-      const fileKindLabel = { quotation: "vendor quotation", quotation_request: "request support", dispatch: "dispatch", bill: "bill" };
+      const row = (k, v) => rows.push(`<div class="flex gap-2"><span class="shrink-0" style="color:var(--muted); min-width:7rem;">${k}</span><span>${v}</span></div>`);
+      if (t.issue_description) row("Problem found", esc(t.issue_description));
+      if (t.repair_venue) row("Where repaired", t.repair_venue === "in_house" ? "On site (in-house)" : "Off site (vendor)");
+      if (t.parts_required) row("Parts needed", esc(t.parts_required));
+      if (t.dispatch_details) row("Parts supply update", esc(t.dispatch_details));
+      if (t.parts_received_note) row("Site store receipt", esc(t.parts_received_note));
+      if (t.parts_issue_note) rows.push(`<div class="rounded-lg px-3 py-2 mt-1" style="background:#fdeef1; color:#9f1239;"><strong>Wrong or defective parts:</strong> ${esc(t.parts_issue_note)}</div>`);
+      if (t.vendor_dispatch_note) row("Sent to vendor", esc(t.vendor_dispatch_note));
+      if (t.vehicle_received_note) row("Machine back on site", esc(t.vehicle_received_note));
+      if (t.vendor_name) row("Vendor quote", `${esc(t.vendor_name)} — <strong>${inr(t.quote_amount)}</strong>${t.quote_details ? ` <span style="color:var(--muted);">(${esc(t.quote_details)})</span>` : ""}`);
+      const fileKindLabel = { quotation: "vendor quote", quotation_request: "quote request", dispatch: "dispatch doc", bill: "vendor invoice" };
       if (t.files && t.files.length) {
         row(
-          "Files",
+          "Attachments",
           t.files
             .map((f) => {
               const rm = canRemoveFile(t, f)
@@ -2092,10 +2092,10 @@
             .join("")
         );
       }
-      if (t.eta_date) row("ETA", t.eta_date);
-      if (t.approval_note) rows.push(`<div class="rounded-lg px-3 py-2 mt-1" style="background:#fdeef1; color:#9f1239;"><strong>Management note:</strong> ${esc(t.approval_note)}</div>`);
-      if (t.root_cause) row("Root cause", esc(t.root_cause));
-      if (t.invoice_number) row("Invoice", esc(t.invoice_number));
+      if (t.eta_date) row("Expected arrival", t.eta_date);
+      if (t.approval_note) rows.push(`<div class="rounded-lg px-3 py-2 mt-1" style="background:#fdeef1; color:#9f1239;"><strong>Management decision:</strong> ${esc(t.approval_note)}</div>`);
+      if (t.root_cause) row("Root cause (closed)", esc(t.root_cause));
+      if (t.invoice_number) row("Invoice number", esc(t.invoice_number));
       return rows.length ? `<div class="text-[13px] space-y-1 mt-3">${rows.join("")}</div>` : "";
     }
 
@@ -2114,7 +2114,7 @@
         : `<span class="flex-1"></span>`;
       return `${remarkThreadHtml(t)}
         <div class="remark-composer">
-          <textarea data-draft="${t.ticket_id}:qreqnote" rows="2" placeholder="Remarks" class="field">${dv(t, "qreqnote")}</textarea>
+          <textarea data-draft="${t.ticket_id}:qreqnote" rows="2" placeholder="Message to vendor or internal note about the quote request" class="field">${dv(t, "qreqnote")}</textarea>
           <div class="remark-composer-bar">
             <input type="file" data-deferred-upload="${t.ticket_id}:quotation_request" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" />
             ${pendingLabel}
@@ -2126,113 +2126,114 @@
     }
 
     function vendorQuotationTask(t) {
-      return `${lbl("Remarks or upload files")}
-        ${input(t, "qdetails", 'placeholder="Remarks"', "textarea")}
-        ${deferredQuotationUpload(t, "Upload files")}
-        ${btn("quotation", t, "Submit", "primary")}`;
+      return `${lbl("Vendor quote details")}
+        ${input(t, "qdetails", 'placeholder="Amount, scope of work, and any conditions for management"', "textarea")}
+        ${deferredQuotationUpload(t, "Attach vendor quote (PDF or photo)")}
+        ${btn("quotation", t, "Send for management approval", "primary")}`;
     }
 
     function taskActions(t) {
       switch (t.status) {
         case "pending_inspection": {
           const route = choiceVal(t, "inspect");
-          let body = `${lbl("Choose action")}${stepSelect(t, "inspect", "Choose repair path…", [
-            { value: "in_house", label: "In-house workshop" },
-            { value: "outside", label: "Outside workshop" }
+          let body = `${lbl("Next step")}${stepSelect(t, "inspect", "Select where this machine will be repaired…", [
+            { value: "in_house", label: "Repair on site (in-house workshop)" },
+            { value: "outside", label: "Send to vendor (off site)" }
           ])}`;
           if (route === "in_house" || route === "outside") {
-            body += `<div class="space-y-2.5 mt-2.5">${input(t, "issue", 'placeholder="Inspection findings: what is wrong?"', "textarea")}
-              ${btn(route === "in_house" ? "inspect_in_house" : "inspect_outside", t, "Submit inspection", "primary")}</div>`;
+            body += `<div class="space-y-2.5 mt-2.5">${input(t, "issue", 'placeholder="What failed? Include symptoms and what you checked."', "textarea")}
+              ${btn(route === "in_house" ? "inspect_in_house" : "inspect_outside", t, "Save inspection", "primary")}</div>`;
           }
           return body;
         }
         case "pending_parts_check": {
           const stock = choiceVal(t, "parts");
-          let body = `${lbl("Choose action")}${stepSelect(t, "parts", "After checking the site store…", [
-            { value: "available", label: "Parts available — start repair" },
-            { value: "missing", label: "Not in stock — raise requisition" }
+          let body = `${lbl("Next step")}${stepSelect(t, "parts", "After checking the site store shelves…", [
+            { value: "available", label: "We have the parts — start workshop repair" },
+            { value: "missing", label: "Not in stock — request from central desk" }
           ])}`;
           if (stock === "missing") {
-            body += `<div class="space-y-2.5 mt-2.5">${input(t, "parts", 'placeholder="List the parts to requisition"', "textarea")}
-              ${btn("parts_missing", t, "Raise requisition", "primary")}</div>`;
+            body += `<div class="space-y-2.5 mt-2.5">${input(t, "parts", 'placeholder="Part numbers, quantities, and machine model if needed"', "textarea")}
+              ${btn("parts_missing", t, "Send parts request", "primary")}</div>`;
           } else if (stock === "available") {
-            body += `<div class="mt-2.5">${btn("parts_available", t, "Parts available", "success")}</div>`;
+            body += `<div class="mt-2.5">${btn("parts_available", t, "Start repair with site stock", "success")}</div>`;
           }
           return body;
         }
         case "pending_dispatch": {
           const central = choiceVal(t, "central");
-          let body = `${lbl("Choose action")}${stepSelect(t, "central", "How do you want to handle this requisition?", [
-            { value: "dispatch", label: "Supply from central store" },
-            { value: "local", label: "Ask site to purchase locally" }
+          let body = `${lbl("Next step")}${stepSelect(t, "central", "How will these parts reach site?", [
+            { value: "dispatch", label: "Dispatch from central parts desk" },
+            { value: "local", label: "Ask mechanical team to buy locally" }
           ])}`;
           if (central === "dispatch") {
             body += `<div class="space-y-2.5 mt-2.5">
               ${dispatchAttachStatus(t)}
-              ${upload(t, "dispatch", "Dispatch challan / PO (PDF or photo, max 5 MB)")}
-              ${input(t, "dispatchnote", 'placeholder="Remarks: parts dispatched, or ordered and will reach site"')}
-              <div>${lbl("Will reach site by")}<input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta") || daysFromNowDate(2)}" class="field" /></div>
-              ${btn("dispatch", t, "Submit", "primary")}
+              ${upload(t, "dispatch", "Attach challan / PO (PDF or photo, max 5 MB)")}
+              ${input(t, "dispatchnote", 'placeholder="What was sent, transporter, LR/ challan number, etc."')}
+              <div>${lbl("Expected on site by")}<input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta") || daysFromNowDate(2)}" class="field" /></div>
+              ${btn("dispatch", t, "Confirm dispatch", "primary")}
             </div>`;
           } else if (central === "local") {
             body += `<div class="space-y-2.5 mt-2.5">
-              ${input(t, "localreq", 'placeholder="Remarks for the mechanical team: what to buy, budget, preferred vendor"', "textarea")}
-              ${btn("request_local_purchase", t, "Send to mechanical team", "primary")}
+              ${input(t, "localreq", 'placeholder="What to buy, qty, budget limit, preferred vendor or market"', "textarea")}
+              ${btn("request_local_purchase", t, "Send buying instruction", "primary")}
             </div>`;
           }
           return body;
         }
         case "pending_local_purchase":
-          return `<div class="text-[13px]" style="color:var(--muted);">The central store asked you to buy these parts at site. Order them, then tell the site store what to expect.</div>
-            ${input(t, "localorder", 'placeholder="Remarks: parts ordered, vendor, bill or PO number"', "textarea")}
-            <div>${lbl("Will reach site by")}<input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta") || daysFromNowDate(2)}" class="field" /></div>
-            ${btn("local_ordered", t, "Parts ordered: send to site store", "primary")}`;
+          return `<div class="text-[13px]" style="color:var(--muted);">Central parts desk asked you to purchase on site. Place the order, then tell the site store when to expect delivery.</div>
+            ${input(t, "localorder", 'placeholder="Vendor or shop, PO/bill number, what was ordered"', "textarea")}
+            <div>${lbl("Expected on site by")}<input data-draft="${t.ticket_id}:eta" type="date" value="${dv(t, "eta") || daysFromNowDate(2)}" class="field" /></div>
+            ${btn("local_ordered", t, "Parts ordered — notify site store", "primary")}`;
         case "in_transit":
           return `<div class="text-[13px]" style="color:var(--muted);">${t.parts_source === "local"
-            ? "The mechanical team ordered these parts locally. When they arrive, make the store entry and confirm."
-            : "Central store has dispatched the parts. Confirm when they arrive at site."}</div>
-            ${input(t, "grn", 'placeholder="Store entry / GRN number (optional)"')}
-            ${btn("receive", t, "Confirm spares received", "success")}`;
+            ? "Parts bought locally are on the way. Log the GRN when they arrive in the site store."
+            : "Central desk dispatched these parts. Log the GRN when they arrive in the site store."}</div>
+            ${input(t, "grn", 'placeholder="GRN or store entry number (optional)"')}
+            ${btn("receive", t, "Log receipt in site store", "success")}`;
         case "quotation_requested":
           return quotationRemarkComposer(t);
         case "pending_quotation":
           return vendorQuotationTask(t);
         case "pending_approval":
-          return `${input(t, "note", 'placeholder="Note (required if rejecting)"')}
-            ${pair(btn("approve", t, "Approve", "success"), btn("reject", t, "Reject", "danger"))}`;
+          return `${lbl("Management decision")}
+            ${input(t, "note", 'placeholder="Reason if you reject the quote (required for reject)"')}
+            ${pair(btn("approve", t, "Approve quote", "success"), btn("reject", t, "Send back for revision", "danger"))}`;
         case "pending_vendor_dispatch": {
           const vd = choiceVal(t, "vendor");
-          let body = `${lbl("Choose action")}${stepSelect(t, "vendor", "Has the machine been sent to the vendor?", [
-            { value: "sent", label: "Sent to vendor" },
-            { value: "not_sent", label: "Not sent yet" }
+          let body = `${lbl("Next step")}${stepSelect(t, "vendor", "Has the machine left site for the vendor?", [
+            { value: "sent", label: "Yes — machine dispatched" },
+            { value: "not_sent", label: "Not yet — update status" }
           ])}`;
           if (vd === "sent" || vd === "not_sent") {
-            body += `<div class="space-y-2.5 mt-2.5">${input(t, "vdispatch", 'placeholder="Remarks: transporter, date, condition on dispatch"', "textarea")}
-              ${btn(vd === "sent" ? "vendor_sent" : "vendor_not_sent", t, "Submit", "primary")}</div>`;
+            body += `<div class="space-y-2.5 mt-2.5">${input(t, "vdispatch", 'placeholder="Low-bed/trailer, date, odometer, damage notes"', "textarea")}
+              ${btn(vd === "sent" ? "vendor_sent" : "vendor_not_sent", t, "Save dispatch note", "primary")}</div>`;
           }
           return body;
         }
         case "vendor_repair_in_progress":
-          return `<div class="text-[13px]" style="color:var(--muted);">After vendor repair, confirm the machine is back on site.</div>
-            ${input(t, "vreceive", 'placeholder="Receipt remarks: date, condition, driver"', "textarea")}
-            ${btn("vehicle_receive", t, "Vehicle received — close breakdown", "success")}`;
+          return `<div class="text-[13px]" style="color:var(--muted);">When the machine returns from the vendor workshop, record condition and close the breakdown.</div>
+            ${input(t, "vreceive", 'placeholder="Arrival date, transporter, test-run result"', "textarea")}
+            ${btn("vehicle_receive", t, "Machine back — close breakdown", "success")}`;
         case "repair_in_progress": {
           const viaReq = t.parts_source === "central" || t.parts_source === "local";
           const repair = choiceVal(t, "repair");
           if (!viaReq) {
-            return `${btn("clear", t, "Mark breakdown cleared", "success")}`;
+            return `${btn("clear", t, "Machine repaired — mark ready", "success")}`;
           }
-          let body = `${lbl("Choose action")}${stepSelect(t, "repair", "What do you want to do?", [
-            { value: "clear", label: "Parts installed — machine is ready" },
-            { value: "wrong", label: "Wrong or defective parts" }
+          let body = `${lbl("Next step")}${stepSelect(t, "repair", "After fitting the parts…", [
+            { value: "clear", label: "Work finished — machine ready for work" },
+            { value: "wrong", label: "Parts are wrong or defective" }
           ])}`;
           if (repair === "clear") {
-            body += `<div class="mt-2.5">${btn("clear", t, "Confirm — breakdown cleared", "success")}</div>`;
+            body += `<div class="mt-2.5">${btn("clear", t, "Confirm machine ready", "success")}</div>`;
           } else if (repair === "wrong") {
             body += `<div class="space-y-2.5 mt-2.5">
-              ${input(t, "wrongnote", 'placeholder="What is wrong, and that it was sent back / exchange asked"', "textarea")}
-              ${t.parts_source === "local" ? `<div>${lbl("Exchange will reach site by (optional)")}<input data-draft="${t.ticket_id}:wrongeta" type="date" value="${dv(t, "wrongeta")}" class="field" /></div>` : ""}
-              ${btn("wrong_parts", t, "Report wrong / defective parts", "danger")}
+              ${input(t, "wrongnote", 'placeholder="What is wrong; whether parts were returned or exchange requested"', "textarea")}
+              ${t.parts_source === "local" ? `<div>${lbl("Replacement expected on site by (optional)")}<input data-draft="${t.ticket_id}:wrongeta" type="date" value="${dv(t, "wrongeta")}" class="field" /></div>` : ""}
+              ${btn("wrong_parts", t, "Report wrong parts", "danger")}
             </div>`;
           }
           return body;
@@ -2302,7 +2303,7 @@
         .sort((a, b) => state.acks[a].index - state.acks[b].index)
         .forEach((id) => cards.splice(Math.min(state.acks[id].index, cards.length), 0, doneCard(id, state.acks[id])));
       $("view-tasks").innerHTML = cards.length === 0
-        ? `<div class="card p-10 text-center"><div class="serif text-xl" style="color:var(--navy);">All clear</div><div class="text-sm mt-1" style="color:var(--muted);">Nothing is waiting on you.</div></div>`
+        ? `<div class="card p-10 text-center"><div class="serif text-xl" style="color:var(--navy);">Queue empty</div><div class="text-sm mt-1" style="color:var(--muted);">No breakdowns need your action right now.</div></div>`
         : cards.join("");
     }
 
@@ -2313,7 +2314,7 @@
       supervisor: "Mechanical Manager", head_office: "Central Store" // legacy role names
     };
     const stageLabel = (s) => (STATUS[s] || { label: s }).label;
-    const PHASES = { report: "Reported", inspection: "Inspection", parts: "Parts", quotation: "Quotation", repair: "Repair", close: "Closing", other: "Other" };
+    const PHASES = { report: "Reported", inspection: "Inspection", parts: "Spares & supply", quotation: "Vendor quote", repair: "Workshop repair", close: "Close-out", other: "Other" };
     const TONE = { success: "green", pending: "amber", problem: "red" };
     const TONE_GLYPH = { success: "✓", pending: "•", problem: "!" };
 
@@ -2354,18 +2355,18 @@
     }
 
     const NOW_TEXT = {
-      pending_inspection: "Waiting for the mechanical team to inspect the machine",
-      pending_parts_check: "Mechanical team is checking the site store for spares",
-      pending_dispatch: (t) => t.parts_issue_note ? "Waiting for the central store to send the correct parts" : "Waiting for the central store to supply the parts or ask site to buy them",
-      pending_local_purchase: "Waiting for the mechanical team to order the parts locally",
-      in_transit: "Parts are on the way. Site store to confirm receipt",
-      quotation_requested: "Waiting for the vendor's quotation",
-      pending_quotation: "Quotation received. Mechanical team to submit it for approval",
-      pending_approval: "Waiting for management to approve the quotation",
-      pending_vendor_dispatch: "Quotation approved. Mechanical team to send the machine to the vendor",
-      vendor_repair_in_progress: "Machine is at the vendor workshop for repair",
-      repair_in_progress: "Repair in progress at site",
-      closed: "Report closed"
+      pending_inspection: "Mechanical Manager has not finished the inspection yet",
+      pending_parts_check: "Checking whether the site store has the needed spares",
+      pending_dispatch: (t) => t.parts_issue_note ? "Central desk is arranging replacement parts after a wrong delivery" : "Central parts desk will dispatch or ask site to buy locally",
+      pending_local_purchase: "Mechanical team is placing a local purchase order",
+      in_transit: "Parts are travelling to site — site store will log GRN on arrival",
+      quotation_requested: "Waiting for the vendor to share a repair quote",
+      pending_quotation: "Quote received — Mechanical Manager will submit it for approval",
+      pending_approval: "Management has not approved the vendor quote yet",
+      pending_vendor_dispatch: "Quote approved — machine must be sent to the vendor",
+      vendor_repair_in_progress: "Machine is off site at the vendor workshop",
+      repair_in_progress: "Workshop crew is repairing the machine on site",
+      closed: "This breakdown is closed"
     };
 
     // "Now" summary pinned above the log: what is happening, who has it, how long, and how many problems so far.
@@ -2379,7 +2380,7 @@
         <div class="headline">${esc(headline)}</div>
         <div class="meta">
           ${open ? `<span>With <strong style="color:var(--ink);">${esc(OWNER[t.status] || "next team")}</strong></span>
-            <span>${liveAge(t.stage_entered_at)} in this step</span>${slaBadge(t)}` : `<span>Total downtime ${liveDowntime(t)}</span>`}
+            <span>Waiting here for ${liveAge(t.stage_entered_at)}</span>${slaBadge(t)}` : `<span>Total downtime ${liveDowntime(t)}</span>`}
           ${issues ? `<span style="color:#9f1239;font-weight:600;">${issues} issue${issues === 1 ? "" : "s"} so far</span>` : ""}
         </div>
       </div>`;
@@ -2490,7 +2491,7 @@
                 <div class="mh-detail-card">
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
-                      <div class="mh-detail-title">${esc(t.issue_description || "Awaiting inspection")}</div>
+                      <div class="mh-detail-title">${esc(t.issue_description || "Inspection not recorded yet")}</div>
                       <div class="mh-detail-sub">${formatDateTime(t.created_at)}${t.root_cause ? " · Cause: " + esc(t.root_cause) : ""}</div>
                     </div>
                     ${statusBadge(t)}
@@ -2525,7 +2526,7 @@
           <div class="text-xs mt-0.5" style="color:var(--muted);">${sub || "&nbsp;"}</div></div>`;
       $("kpi-row").innerHTML =
         kpi("Machines down", mt.total_machines_broken, "#fb7185", `of ${state.machines.length} in fleet`) +
-        kpi("Past SLA", pastSla, pastSla ? "#fb7185" : "#2dd4bf", pastSla ? "needs attention" : "all on track") +
+        kpi("Overdue steps", pastSla, pastSla ? "#fb7185" : "#2dd4bf", pastSla ? "needs attention" : "all on track") +
         kpi("Avg downtime", mt.average_downtime_hours == null ? "—" : formatDuration(mt.average_downtime_hours), "#22d3ee", `${mt.closed_tickets} closed`);
       $("stage-table").innerHTML = STAGE_ORDER.map((s) => {
         const over = mt.overdue_by_stage[s] || 0;
@@ -2568,19 +2569,19 @@
           return act(put("parts-check", { available: true }), "Spares available. Repair started.", id);
         case "parts_missing": {
           const parts = field(id, "parts");
-          if (!parts) return fail("List the parts to requisition.");
-          return act(put("parts-check", { available: false, parts_required: parts }), "Requisition sent to central store.", id);
+          if (!parts) return fail("List the parts needed from the central desk.");
+          return act(put("parts-check", { available: false, parts_required: parts }), "Parts request sent to central desk.", id);
         }
         case "dispatch": {
           const t = state.tickets.find((x) => x.ticket_id === id);
           const details = field(id, "dispatchnote"), eta = field(id, "eta");
-          if (t && !(t.files || []).some((f) => f.kind === "dispatch")) return fail("Attach the dispatch PDF first (Step 1).");
-          if (details.length < 2 || !eta) return fail("Enter dispatch details and the arrival date.");
+          if (t && !(t.files || []).some((f) => f.kind === "dispatch")) return fail("Attach the dispatch document (challan or PO) first.");
+          if (details.length < 2 || !eta) return fail("Enter what was dispatched and the expected arrival date.");
           return act(put("dispatch", { dispatch_details: details, eta_date: eta }), "Dispatch recorded.", id);
         }
         case "receive": {
           const grn = field(id, "grn");
-          return act(put("receive", grn ? { note: grn } : null), "Receipt confirmed. Sent to the mechanical team.", id);
+          return act(put("receive", grn ? { note: grn } : null), "GRN logged. Workshop can continue repair.", id);
         }
         case "request_local_purchase": {
           const note = field(id, "localreq");
@@ -2665,7 +2666,7 @@
           return act(put("vehicle-receive", { note }), "Vehicle received. Breakdown closed; machine is active.", id);
         }
         case "clear":
-          return act(put("clear", null), "Breakdown cleared. Machine is active again. Report closed.", id);
+          return act(put("clear", null), "Machine marked ready for work. Breakdown closed.", id);
       }
     }
 

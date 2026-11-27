@@ -1400,7 +1400,7 @@
     const STAGE_ORDER = Object.keys(STATUS).filter((s) => s !== "closed");
 
     const MECH_TASKS = [
-      "pending_inspection", "pending_parts_check", "pending_local_purchase", "quotation_requested", "pending_quotation",
+      "pending_inspection", "pending_parts_check", "pending_local_purchase", "pending_quotation",
       "pending_vendor_dispatch", "vendor_repair_in_progress", "repair_in_progress"
     ];
     // Legacy Neon/sql seeds used supervisor / head_office — map to current SOP roles.
@@ -1560,7 +1560,7 @@
       },
       outside: {
         steps: ["Reported", "Inspection", "Vendor quote", "Management OK", "Off-site repair", "Machine ready", "Closed"],
-        at: { pending_inspection: 1, quotation_requested: 2, pending_quotation: 2, pending_approval: 3, pending_vendor_dispatch: 4, vendor_repair_in_progress: 4, cleared: 5, closed: 6 }
+        at: { pending_inspection: 1, pending_quotation: 2, pending_approval: 3, pending_vendor_dispatch: 4, vendor_repair_in_progress: 4, cleared: 5, closed: 6 }
       },
       unknown: {
         steps: ["Reported", "Inspection", "Repair", "Machine ready", "Closed"],
@@ -2058,9 +2058,9 @@
       const r = effectiveRole(state.me.role);
       if (f.kind === "dispatch") return r === "central_store" && t.status === "pending_dispatch";
       if (f.kind === "quotation")
-        return (r === "mech_engineer" || r === "pm_incharge") && (t.status === "pending_quotation" || (t.status === "quotation_requested" && t.quotation_request_note));
+        return (r === "mech_engineer" || r === "pm_incharge") && t.status === "pending_quotation";
       if (f.kind === "quotation_request")
-        return (r === "mech_engineer" || r === "pm_incharge") && t.status === "quotation_requested";
+        return (r === "mech_engineer" || r === "pm_incharge") && t.status === "pending_quotation";
       return false;
     }
 
@@ -2068,7 +2068,7 @@
       const rows = [];
       const row = (k, v) => rows.push(`<div class="flex gap-2"><span class="shrink-0" style="color:var(--muted); min-width:7rem;">${k}</span><span>${v}</span></div>`);
       if (t.issue_description) row("Problem found", esc(t.issue_description));
-      if (t.repair_venue) row("Where repaired", t.repair_venue === "in_house" ? "On site (in-house)" : "Off site (vendor)");
+      if (t.repair_venue) row("Repair route", t.repair_venue === "in_house" ? "On site (in-house)" : "Off site (vendor)");
       if (t.parts_required) row("Parts needed", esc(t.parts_required));
       if (t.dispatch_details) row("Parts supply update", esc(t.dispatch_details));
       if (t.parts_received_note) row("Site store receipt", esc(t.parts_received_note));
@@ -2107,29 +2107,30 @@
         sending.map((s) => `<div class="remark-bubble sending">${esc(s)}</div>`).join("")}</div>`;
     }
 
-    function quotationRemarkComposer(t) {
+    function quotationNotesComposer(t) {
       const pending = state.pendingUploads[`${t.ticket_id}:quotation_request`];
       const pendingLabel = pending
         ? `<span class="text-xs truncate flex-1" style="color:#0b6b52;">${esc(pending.name)}</span>`
         : `<span class="flex-1"></span>`;
       return `${remarkThreadHtml(t)}
         <div class="remark-composer">
-          <textarea data-draft="${t.ticket_id}:qreqnote" rows="2" placeholder="Message to vendor or internal note about the quote request" class="field">${dv(t, "qreqnote")}</textarea>
+          <textarea data-draft="${t.ticket_id}:qreqnote" rows="2" placeholder="Optional: call log, email to vendor, or follow-up note" class="field">${dv(t, "qreqnote")}</textarea>
           <div class="remark-composer-bar">
             <input type="file" data-deferred-upload="${t.ticket_id}:quotation_request" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" />
             ${pendingLabel}
-            <button type="button" data-action="quotation_request_send" data-ticket="${t.ticket_id}" class="btn-send" aria-label="Send">➤</button>
+            <button type="button" data-action="quotation_request_send" data-ticket="${t.ticket_id}" class="btn-send" aria-label="Add note">➤</button>
           </div>
-        </div>
-        ${(t.quotation_request_note || pending || (t.files || []).some((f) => f.kind === "quotation_request"))
-          ? `<div class="mt-2.5">${btn("quotation_request_continue", t, "Next", "outline")}</div>` : ""}`;
+        </div>`;
     }
 
     function vendorQuotationTask(t) {
-      return `${lbl("Vendor quote details")}
+      return `<div class="text-[13px] mb-2" style="color:var(--muted);">Off-site repair: log vendor follow-up (optional), then attach the quote and send to management.</div>
+        ${quotationNotesComposer(t)}
+        <div class="space-y-2.5 mt-4 pt-4" style="border-top:1px solid var(--line);">
+        ${lbl("Vendor quote for approval")}
         ${input(t, "qdetails", 'placeholder="Amount, scope of work, and any conditions for management"', "textarea")}
         ${deferredQuotationUpload(t, "Attach vendor quote (PDF or photo)")}
-        ${btn("quotation", t, "Send for management approval", "primary")}`;
+        ${btn("quotation", t, "Send for management approval", "primary")}</div>`;
     }
 
     function taskActions(t) {
@@ -2193,8 +2194,6 @@
             : "Central desk dispatched these parts. Log the GRN when they arrive in the site store."}</div>
             ${input(t, "grn", 'placeholder="GRN or store entry number (optional)"')}
             ${btn("receive", t, "Log receipt in site store", "success")}`;
-        case "quotation_requested":
-          return quotationRemarkComposer(t);
         case "pending_quotation":
           return vendorQuotationTask(t);
         case "pending_approval":
@@ -2360,8 +2359,7 @@
       pending_dispatch: (t) => t.parts_issue_note ? "Central desk is arranging replacement parts after a wrong delivery" : "Central parts desk will dispatch or ask site to buy locally",
       pending_local_purchase: "Mechanical team is placing a local purchase order",
       in_transit: "Parts are travelling to site — site store will log GRN on arrival",
-      quotation_requested: "Waiting for the vendor to share a repair quote",
-      pending_quotation: "Quote received — Mechanical Manager will submit it for approval",
+      pending_quotation: "Attach the vendor quote and send it to management for approval",
       pending_approval: "Management has not approved the vendor quote yet",
       pending_vendor_dispatch: "Quote approved — machine must be sent to the vendor",
       vendor_repair_in_progress: "Machine is off site at the vendor workshop",
@@ -2627,8 +2625,6 @@
           if (!ok) { state.drafts[draftKey] = savedDraft ?? note; renderAll(); }
           return;
         }
-        case "quotation_request_continue":
-          return act(() => apiRequest("PUT", `/api/tickets/${id}/quotation-request/continue`), "Next step.", id);
         case "quotation": {
           const remarks = field(id, "qdetails");
           if (remarks.length < 3) return fail("Enter remarks for management.");

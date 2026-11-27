@@ -1389,7 +1389,7 @@
       pending_local_purchase: { label: "Buy parts at site", tone: "t-amber" },
       in_transit: { label: "Parts on the way", tone: "t-indigo" },
       quotation_requested: { label: "Vendor quote requested", tone: "t-amber" },
-      pending_quotation: { label: "Quote ready to submit", tone: "t-sky" },
+      pending_quotation: { label: "Vendor quote requested", tone: "t-amber" },
       pending_approval: { label: "Awaiting management OK", tone: "t-violet" },
       pending_vendor_dispatch: { label: "Send machine to vendor", tone: "t-amber" },
       vendor_repair_in_progress: { label: "At vendor workshop", tone: "t-blue" },
@@ -1400,7 +1400,7 @@
     const STAGE_ORDER = Object.keys(STATUS).filter((s) => s !== "closed");
 
     const MECH_TASKS = [
-      "pending_inspection", "pending_parts_check", "pending_local_purchase", "pending_quotation",
+      "pending_inspection", "pending_parts_check", "pending_local_purchase", "quotation_requested",
       "pending_vendor_dispatch", "vendor_repair_in_progress", "repair_in_progress"
     ];
     // Legacy Neon/sql seeds used supervisor / head_office — map to current SOP roles.
@@ -1560,7 +1560,7 @@
       },
       outside: {
         steps: ["Reported", "Inspection", "Vendor quote", "Management OK", "Off-site repair", "Machine ready", "Closed"],
-        at: { pending_inspection: 1, pending_quotation: 2, pending_approval: 3, pending_vendor_dispatch: 4, vendor_repair_in_progress: 4, cleared: 5, closed: 6 }
+        at: { pending_inspection: 1, quotation_requested: 2, pending_quotation: 2, pending_approval: 3, pending_vendor_dispatch: 4, vendor_repair_in_progress: 4, cleared: 5, closed: 6 }
       },
       unknown: {
         steps: ["Reported", "Inspection", "Repair", "Machine ready", "Closed"],
@@ -2058,9 +2058,9 @@
       const r = effectiveRole(state.me.role);
       if (f.kind === "dispatch") return r === "central_store" && t.status === "pending_dispatch";
       if (f.kind === "quotation")
-        return (r === "mech_engineer" || r === "pm_incharge") && t.status === "pending_quotation";
+        return (r === "mech_engineer" || r === "pm_incharge") && t.status === "quotation_requested";
       if (f.kind === "quotation_request")
-        return (r === "mech_engineer" || r === "pm_incharge") && t.status === "pending_quotation";
+        return (r === "mech_engineer" || r === "pm_incharge") && t.status === "quotation_requested";
       return false;
     }
 
@@ -2194,7 +2194,7 @@
             : "Central desk dispatched these parts. Log the GRN when they arrive in the site store."}</div>
             ${input(t, "grn", 'placeholder="GRN or store entry number (optional)"')}
             ${btn("receive", t, "Log receipt in site store", "success")}`;
-        case "pending_quotation":
+        case "quotation_requested":
           return vendorQuotationTask(t);
         case "pending_approval":
           return `${lbl("Management decision")}
@@ -2359,7 +2359,8 @@
       pending_dispatch: (t) => t.parts_issue_note ? "Central desk is arranging replacement parts after a wrong delivery" : "Central parts desk will dispatch or ask site to buy locally",
       pending_local_purchase: "Mechanical team is placing a local purchase order",
       in_transit: "Parts are travelling to site — site store will log GRN on arrival",
-      pending_quotation: "Attach the vendor quote and send it to management for approval",
+      quotation_requested: "Get the vendor quote, then attach it and send to management",
+      pending_quotation: "Get the vendor quote, then attach it and send to management",
       pending_approval: "Management has not approved the vendor quote yet",
       pending_vendor_dispatch: "Quote approved — machine must be sent to the vendor",
       vendor_repair_in_progress: "Machine is off site at the vendor workshop",

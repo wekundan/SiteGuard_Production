@@ -49,6 +49,11 @@
       --fleet-surface: rgba(14, 19, 28, 0.78);
       --fleet-border: rgba(255, 255, 255, 0.09);
       --fleet-glow: 0 0 32px rgba(34, 211, 238, 0.12);
+      --card-surface: #fff;
+      --flash-bg-start: #eefaf6;
+      --flash-border: #0f766e;
+      --flash-ring: rgba(15, 118, 110, 0.5);
+      --card-shadow-rest: 0 12px 32px -20px rgba(16, 24, 40, 0.22);
     }
     body {
       font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
@@ -67,6 +72,11 @@
       --line: rgba(255, 255, 255, 0.1);
       --navy: #eef2f8;
       --accent: var(--fleet-cyan);
+      --card-surface: var(--fleet-surface);
+      --flash-bg-start: rgba(45, 212, 191, 0.14);
+      --flash-border: #2dd4bf;
+      --flash-ring: rgba(34, 211, 238, 0.45);
+      --card-shadow-rest: 0 20px 50px -30px rgba(0, 0, 0, 0.65);
       --accent-dark: var(--fleet-cyan-dim);
       --warn: #fbbf24;
       color: var(--ink);
@@ -511,7 +521,7 @@
     .industrial { font-family: 'Barlow Condensed', 'DM Sans', sans-serif; letter-spacing: 0.06em; text-transform: uppercase; }
     .label { font-family: 'Barlow Condensed', 'Inter', sans-serif; font-size: .72rem; letter-spacing: .11em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 
-    .card { background: #fff; border: 1px solid var(--line); border-radius: 10px;
+    .card { background: var(--card-surface); border: 1px solid var(--line); border-radius: 10px;
       box-shadow: 0 1px 2px rgba(18, 21, 26, 0.06), 0 16px 40px -24px rgba(18, 21, 26, 0.22); }
     .card.overdue { border-color: #f3b6c0; box-shadow: 0 1px 2px rgba(190,18,60,.06), 0 12px 32px -18px rgba(190,18,60,.35); }
 
@@ -707,6 +717,7 @@
     /* ---- action feedback: loading, success, progress ---- */
     fieldset.actions { border: 0; margin: 0; min-width: 0; padding: 1rem 0 0; }
     fieldset.actions:disabled .field { background: #f3f1ec; color: #8a8579; }
+    html.theme-dark body.signed-in fieldset.actions:disabled .field { background: rgba(8, 11, 18, 0.5); color: #6b7280; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; }
     .btn.is-loading { cursor: progress; }
@@ -717,9 +728,16 @@
     .btn-danger.is-loading:disabled { background: #fff; color: #be123c; opacity: .85; }
 
     @keyframes flashRing {
-      0% { box-shadow: 0 0 0 0 rgba(15,118,110,.5), 0 12px 32px -20px rgba(16,24,40,.22); border-color: #0f766e; background: #eefaf6; }
-      60% { border-color: #0f766e; }
-      100% { box-shadow: 0 0 0 14px rgba(15,118,110,0), 0 12px 32px -20px rgba(16,24,40,.22); background: #fff; }
+      0% {
+        box-shadow: 0 0 0 0 var(--flash-ring), var(--card-shadow-rest);
+        border-color: var(--flash-border);
+        background: var(--flash-bg-start);
+      }
+      60% { border-color: var(--flash-border); }
+      100% {
+        box-shadow: 0 0 0 14px rgba(0, 0, 0, 0), var(--card-shadow-rest);
+        background: var(--card-surface);
+      }
     }
     .card.flash { animation: flashRing 1.4s ease-out; }
     @keyframes pop { 0% { transform: scale(.8); opacity: .2; } 60% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
@@ -1671,10 +1689,14 @@
           Object.keys(state.choices).filter((k) => k.startsWith(ticketId + ":")).forEach((k) => delete state.choices[k]);
         }
         // Keep the ticket the server returned: roles that cannot see every ticket still need it to confirm where it went next.
-        if (ticketId) state.acks[ticketId] = { message: successMessage, index: Math.max(index, 0), played: false, ticket: result && result.ticket_id === ticketId ? result : null };
+        // File attach: the upload-done box is enough — skip green ack banner and card flash.
+        const quiet = keepDrafts;
+        if (ticketId && !quiet) {
+          state.acks[ticketId] = { message: successMessage, index: Math.max(index, 0), played: false, ticket: result && result.ticket_id === ticketId ? result : null };
+        }
         delete state.busy[ticketId];
         await refreshFromServer();
-        if (ticketId) {
+        if (ticketId && !quiet) {
           scheduleAckExpiry(ticketId);
           const el = document.querySelector(`[data-done="${ticketId}"], [data-card="${ticketId}"]`);
           if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });

@@ -120,16 +120,12 @@ with TestClient(main.app) as c:
     call("PUT", f"/api/tickets/{t1}/clear", store, 403, "site store cannot clear breakdown")
     call("PUT", f"/api/tickets/{t1}/clear", mech, 200, "mechanical confirms cleared")
     check(machine_status(M_IN) == "active", "machine active after clearance")
-    close = {"root_cause": "Worn hose", "repair_cost": 1200.5}
-    call("PUT", f"/api/tickets/{t1}/close", mech, 403, "mechanical engineer cannot close register", close)
-    call("PUT", f"/api/tickets/{t1}/close", deo, 403, "DEO cannot close register", close)
-    call("PUT", f"/api/tickets/{t1}/close", pm, 200, "P&M in-charge closes with root cause and cost", close)
-    call("PUT", f"/api/tickets/{t1}/close", pm, 409, "cannot close twice", close)
+    check(tickets()[t1]["status"] == "closed", "clearing closes the report automatically")
     raw_events = c.get("/api/tickets/%s/events" % t1, headers=mgmt).json()
-    check(raw_events[0]["actor_role"] == "deo" and raw_events[-1]["actor_role"] == "pm_incharge", "events carry the author's role")
+    check(raw_events[0]["actor_role"] == "deo" and raw_events[-1]["actor_role"] == "mech_engineer", "events carry the author's role")
     ev = [e["to_status"] for e in raw_events]
     check(ev ==["pending_inspection", "pending_parts_check", "pending_dispatch", "in_transit", "repair_in_progress", "cleared", "closed"], "event log follows SOP")
-    check(tickets()[t1]["repair_cost"] == 1200.5 and tickets()[t1]["downtime_hours"] >= 0, "closure record stored")
+    check(tickets()[t1]["root_cause"] == "Hydraulic hose burst" and tickets()[t1]["downtime_hours"] >= 0, "inspection findings become the root cause")
     check(
         [e["type"] for e in raw_events]
         == ["breakdown.reported", "inspection.completed_in_house", "parts.requested", "parts.dispatched", "parts.received", "repair.cleared", "record.closed"],
@@ -139,7 +135,7 @@ with TestClient(main.app) as c:
     check(raw_events[1]["payload"] == {"venue": "in_house"} and raw_events[1]["note"] == "Hydraulic hose burst", "inspection: clean note plus structured payload")
     check(raw_events[2]["note"] == "Hose 1in x2", "no display prefix is stored in notes")
     check(raw_events[3]["payload"] == {"eta_date": "2030-01-01"} and raw_events[4]["note"] is None, "dispatch keeps its ETA; receipt without an entry has no note")
-    check(raw_events[-1]["payload"] == {"repair_cost": 1200.5} and raw_events[-1]["note"] == "Worn hose", "closure: root cause as note, cost in payload")
+    check(raw_events[-1]["note"] == "Hydraulic hose burst", "closure event carries the root cause as its note")
 
     # --- Parts: central store supplies or asks site to buy; wrong parts loop back -----------
     M_ROLLER = "10000000-0000-4000-8000-000000000006"
@@ -275,13 +271,9 @@ with TestClient(main.app) as c:
         {"note": "Returned on low-bed 18 Oct, test run OK"},
     )
     t3 = call("POST", "/api/tickets/create", site, 201, "can re-report after clearance, before closure", {"machine_id": M_OUT})["ticket_id"]
-    close2 = {"root_cause": "Piston wear", "repair_cost": 45000, "invoice_number": "INV-77"}
-    call("PUT", f"/api/tickets/{t2}/close", pm, 422, "outside repair needs the vendor bill", close2)
     upload(t3, pm, "bill", PDF, 409, "bill only on cleared outside repairs")
-    upload(t2, pm, "bill", PNG, 201, "P&M in-charge attaches bill", name="bill.png")
-    call("PUT", f"/api/tickets/{t2}/close", pm, 200, "P&M in-charge closes with bill", close2)
     row2 = tickets()[t2]
-    check(row2["cost_over_quote"] is None and row2["invoice_number"] == "INV-77" and len(row2["files"]) >= 3, "closure with bill and attachments")
+    check(row2["status"] == "closed" and row2["root_cause"], "outside repair closes automatically on vehicle receipt")
 
     # --- SLA and metrics ---------------------------------------------------
     tk = tickets()
@@ -292,7 +284,7 @@ with TestClient(main.app) as c:
     check(tk[t1]["sla_due_at"] is None, "closed ticket has no SLA")
     m = c.get("/api/dashboard/metrics", headers=pm).json()
     check(m["overdue_by_stage"].get("pending_inspection") == 1, "overdue counts by stage")
-    check(m["closed_tickets"] == 7 and m["total_repair_cost"] == 84300.5, "closed count and total cost (incl. 5 seeded past repairs)")
+    check(m["closed_tickets"] == 7, "closed count (incl. 5 seeded past repairs)")
     past = [t for t in tk.values() if t["machine_id"] == M_BROKEN]
     in_year = [t for t in past if (main._now() - main.datetime.fromisoformat(t["created_at"])).days <= 365]
     check(len(past) == 5 and len(in_year) == 4, "seed gives machine 1 four breakdowns in the last year and one older")

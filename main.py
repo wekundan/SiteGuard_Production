@@ -192,7 +192,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.9.13")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.10.0")
 
 
 def hash_password(password: str) -> str:
@@ -628,6 +628,20 @@ def migrate_stuck_quotation_request_logs() -> None:
         db.commit()
 
 
+def migrate_cleared_to_closed() -> None:
+    """Closing is automatic now: tickets left 'cleared' by older builds close with their inspection findings."""
+    if not inspect(engine).has_table("tickets"):
+        return
+    with SessionLocal() as db:
+        now = _now()
+        for ticket in db.query(Ticket).filter(Ticket.status == S.CLEARED).all():
+            ticket.root_cause = ticket.issue_description
+            ticket.closed_at = ticket.cleared_at or now
+            ticket.status = S.CLOSED
+            ticket.stage_entered_at = now
+        db.commit()
+
+
 def backfill_requisition_by() -> None:
     """Tickets requisitioned before requisition_by existed stay routed to site store otherwise."""
     if not inspect(engine).has_table("tickets") or not inspect(engine).has_table("ticket_events"):
@@ -723,6 +737,7 @@ async def lifespan(app: FastAPI):
     migrate_legacy_user_roles()
     backfill_requisition_by()
     migrate_stuck_quotation_request_logs()
+    migrate_cleared_to_closed()
     with SessionLocal() as db:
         seed_initial_data(db)
     yield
@@ -812,13 +827,6 @@ class VendorDispatchRequest(BaseModel):
 
 class VehicleReceiveRequest(BaseModel):
     note: str = Field(..., min_length=3, max_length=1000)
-
-
-class CloseRequest(BaseModel):
-    root_cause: str = Field(..., min_length=3, max_length=1000)
-    repair_cost: float = Field(..., ge=0)  # for outside repairs: the final billed amount
-    invoice_number: Optional[str] = Field(default=None, max_length=100)
-    closure_notes: Optional[str] = Field(default=None, max_length=1000)
 
 
 class FileInfo(BaseModel):
@@ -1078,6 +1086,14 @@ def finish(db: Session, ticket: Ticket) -> TicketResponse:
     db.commit()
     db.refresh(ticket)
     return TicketResponse.model_validate(ticket)
+
+
+def close_cleared(db: Session, ticket: Ticket, actor: User) -> None:
+    """Breakdown cleared = report closed. The inspection findings are the root cause."""
+    ticket.cleared_at = ticket.stage_entered_at
+    move_ticket(db, ticket, S.CLOSED, actor, note=ticket.issue_description)
+    ticket.root_cause = ticket.issue_description
+    ticket.closed_at = ticket.stage_entered_at
 
 
 def user_payload(u: User) -> dict:
@@ -1425,7 +1441,7 @@ def receive_vehicle_from_vendor(
     note = payload.note.strip()
     move_ticket(db, ticket, S.CLEARED, actor, note=note)
     ticket.vehicle_received_note = note
-    ticket.cleared_at = ticket.stage_entered_at
+    close_cleared(db, ticket, actor)
     machine = db.get(Machine, ticket.machine_id)
     if machine:
         machine.status = MachineStatus.ACTIVE
@@ -1446,35 +1462,10 @@ def clear_breakdown(
             detail="In-house repairs use Mark breakdown cleared; outside repairs use vehicle receipt at site.",
         )
     move_ticket(db, ticket, S.CLEARED, actor)
-    ticket.cleared_at = ticket.stage_entered_at
+    close_cleared(db, ticket, actor)
     machine = db.get(Machine, ticket.machine_id)
     if machine:
         machine.status = MachineStatus.ACTIVE
-    return finish(db, ticket)
-
-
-# SOP 9: P&M In-charge logs downtime, repair cost and root cause to close the report
-@app.put("/api/tickets/{ticket_id}/close", response_model=TicketResponse)
-def close_ticket(
-    ticket_id: str,
-    payload: CloseRequest,
-    actor: User = Depends(require_roles(UserRole.PM_INCHARGE)),
-    db: Session = Depends(get_db),
-) -> TicketResponse:
-    ticket = get_ticket(db, ticket_id)
-    if (
-        REQUIRE_BILL_FOR_OUTSIDE
-        and ticket.status == S.CLEARED
-        and ticket.repair_venue == RepairVenue.OUTSIDE
-        and not db.query(TicketFile).filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == "bill").count()
-    ):
-        raise HTTPException(status_code=422, detail="Attach the vendor bill before closing an outside repair.")
-    move_ticket(db, ticket, S.CLOSED, actor, note=payload.root_cause.strip(), payload={"repair_cost": payload.repair_cost})
-    ticket.root_cause = payload.root_cause.strip()
-    ticket.invoice_number = (payload.invoice_number or "").strip() or None
-    ticket.repair_cost = payload.repair_cost
-    ticket.closure_notes = (payload.closure_notes or "").strip() or None
-    ticket.closed_at = ticket.stage_entered_at
     return finish(db, ticket)
 
 
@@ -1482,7 +1473,6 @@ def close_ticket(
 
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 MAX_FILES_PER_KIND = 5
-REQUIRE_BILL_FOR_OUTSIDE = os.getenv("REQUIRE_BILL_FOR_OUTSIDE", "1") != "0"
 REQUIRE_DISPATCH_DOCS = os.getenv("REQUIRE_DISPATCH_DOCS", "1") != "0"
 # Type is decided from the file's own first bytes, never from the client's claim.
 FILE_SIGNATURES = (

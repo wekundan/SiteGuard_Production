@@ -2071,6 +2071,7 @@
       if (t.repair_venue) row("Repair", t.repair_venue === "in_house" ? "In-house workshop" : "Outside workshop");
       if (t.parts_required) row("Parts", esc(t.parts_required));
       if (t.dispatch_details) row("Parts status", esc(t.dispatch_details));
+      if (t.parts_received_note) row("Store receipt", esc(t.parts_received_note));
       if (t.parts_issue_note) rows.push(`<div class="rounded-lg px-3 py-2 mt-1" style="background:#fdeef1; color:#9f1239;"><strong>Wrong parts reported:</strong> ${esc(t.parts_issue_note)}</div>`);
       if (t.vendor_dispatch_note) row("Vendor dispatch", esc(t.vendor_dispatch_note));
       if (t.vehicle_received_note) row("Received at site", esc(t.vehicle_received_note));

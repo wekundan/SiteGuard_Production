@@ -5,7 +5,7 @@ FastAPI + Postgres + single-page mobile web app that follows the plant breakdown
 ## Workflow
 1. **Report** (Sr Civil Engineer or P&M DEO) -> 2. **Inspect and decide** (Mechanical Manager or P&M In-charge): in-house or outside workshop.
 - **In-house:** site store check. Parts available -> repair. Not available -> requisition -> **central store dispatches** -> **site store confirms receipt** -> repair.
-- **Outside:** **vendor quote requested** (optional follow-up notes, attach quote, submit) -> **management approves** (or sends back) -> **mech/PM logs dispatch to vendor** -> repair at vendor -> **mech/PM confirms vehicle received at site** (breakdown cleared and report closed automatically).
+- **Outside:** **vendor quote requested** (attach quote + details, submit) -> **management approves** (or sends back) -> **mech/PM logs dispatch to vendor** -> repair at vendor -> **mech/PM confirms vehicle received at site** (breakdown cleared and report closed automatically).
 3. Mechanical dept marks the **breakdown cleared** (machine active again). The report **closes automatically**, with the inspection findings as the root cause. Downtime is calculated automatically.
 
 A machine can be reported again once its previous breakdown is cleared, even if the register entry is still open.

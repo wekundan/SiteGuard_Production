@@ -2099,34 +2099,9 @@
       return rows.length ? `<div class="text-[13px] space-y-1 mt-3">${rows.join("")}</div>` : "";
     }
 
-    function remarkThreadHtml(t) {
-      const lines = (t.quotation_request_note || "").split("\n").filter(Boolean);
-      const sending = state.optimistic[t.ticket_id] || [];
-      if (!lines.length && !sending.length) return "";
-      return `<div class="remark-thread">${lines.map((line) => `<div class="remark-bubble">${esc(line)}</div>`).join("")}${
-        sending.map((s) => `<div class="remark-bubble sending">${esc(s)}</div>`).join("")}</div>`;
-    }
-
-    function quotationNotesComposer(t) {
-      const pending = state.pendingUploads[`${t.ticket_id}:quotation_request`];
-      const pendingLabel = pending
-        ? `<span class="text-xs truncate flex-1" style="color:#0b6b52;">${esc(pending.name)}</span>`
-        : `<span class="flex-1"></span>`;
-      return `${remarkThreadHtml(t)}
-        <div class="remark-composer">
-          <textarea data-draft="${t.ticket_id}:qreqnote" rows="2" placeholder="Optional: call log, email to vendor, or follow-up note" class="field">${dv(t, "qreqnote")}</textarea>
-          <div class="remark-composer-bar">
-            <input type="file" data-deferred-upload="${t.ticket_id}:quotation_request" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" />
-            ${pendingLabel}
-            <button type="button" data-action="quotation_request_send" data-ticket="${t.ticket_id}" class="btn-send" aria-label="Add note">➤</button>
-          </div>
-        </div>`;
-    }
-
     function vendorQuotationTask(t) {
-      return `<div class="text-[13px] mb-2" style="color:var(--muted);">Off-site repair: log vendor follow-up (optional), then attach the quote and send to management.</div>
-        ${quotationNotesComposer(t)}
-        <div class="space-y-2.5 mt-4 pt-4" style="border-top:1px solid var(--line);">
+      return `<div class="text-[13px] mb-2" style="color:var(--muted);">Attach the vendor quote and send it to management for approval.</div>
+        <div class="space-y-2.5">
         ${lbl("Vendor quote for approval")}
         ${input(t, "qdetails", 'placeholder="Amount, scope of work, and any conditions for management"', "textarea")}
         ${deferredQuotationUpload(t, "Attach vendor quote (PDF or photo)")}
@@ -2599,32 +2574,6 @@
           const t = state.tickets.find((x) => x.ticket_id === id) || {};
           return act(put("wrong-parts", { note, eta_date: eta || null }),
             t.parts_source === "central" ? "Reported. The request is back with the central store." : "Reported. The exchange goes to the site store.", id);
-        }
-        case "quotation_request_send": {
-          const note = field(id, "qreqnote");
-          const pending = state.pendingUploads[`${id}:quotation_request`];
-          if (!note && !pending) return fail("Enter remarks or choose a file.");
-          // Optimistic: the remark appears at once as "sending…" and the box clears; both are restored if it fails.
-          const draftKey = `${id}:qreqnote`;
-          const savedDraft = state.drafts[draftKey];
-          state.optimistic[id] = [[note, pending ? `[file: ${pending.name}]` : ""].filter(Boolean).join(" ")];
-          delete state.drafts[draftKey];
-          const ok = await act(async () => {
-            let attachmentName = null;
-            if (pending) {
-              await postFile(id, "quotation_request", pending);
-              attachmentName = pending.name;
-              delete state.pendingUploads[`${id}:quotation_request`];
-            }
-            await apiRequest("PUT", `/api/tickets/${id}/quotation-request/message`, {
-              note,
-              attachment_name: attachmentName
-            });
-            delete state.optimistic[id]; // the saved remark is now in the next refresh
-          }, "Remark recorded.", id);
-          delete state.optimistic[id];
-          if (!ok) { state.drafts[draftKey] = savedDraft ?? note; renderAll(); }
-          return;
         }
         case "quotation": {
           const remarks = field(id, "qdetails");

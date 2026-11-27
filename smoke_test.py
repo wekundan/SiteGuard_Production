@@ -200,23 +200,7 @@ with TestClient(main.app) as c:
     t2 = call("POST", "/api/tickets/create", site, 201, "report second machine", {"machine_id": M_OUT})["ticket_id"]
     call("PUT", f"/api/tickets/{t2}/inspect", pm, 200, "P&M in-charge inspects (outside)", {"issue_description": "Engine overhaul", "repair_venue": "outside"})
     check(tickets()[t2]["status"] == "quotation_requested", "outside inspect waits for vendor quote")
-    call(
-        "PUT",
-        f"/api/tickets/{t2}/quotation-request/message",
-        mech,
-        200,
-        "follow-up remark on quote stage",
-        {"note": "Called Shree Works on 10 Oct"},
-    )
     upload(t2, mech, "quotation_request", PDF, 201, "request-support file", name="../evil name?.pdf")
-    call(
-        "PUT",
-        f"/api/tickets/{t2}/quotation-request/message",
-        mech,
-        200,
-        "remark with attachment name",
-        {"note": "", "attachment_name": "evil name_.pdf"},
-    )
     upload(t2, site, "quotation", PDF, 403, "site office cannot attach quotation")
     upload(t2, mech, "quotation", b"just text", 415, "non PDF/JPG/PNG rejected")
     upload(t2, mech, "quotation", b"%PDF" + b"0" * (5 * 1024 * 1024), 413, "file over 5 MB rejected")
@@ -239,9 +223,6 @@ with TestClient(main.app) as c:
     t2_events = c.get(f"/api/tickets/{t2}/events", headers=mgmt).json()
     rej = [e for e in t2_events if e["type"] == "quotation.rejected"]
     check(len(rej) == 1 and rej[0]["tone"] == "problem" and rej[0]["note"] == "Too high", "rejection is a problem event with the bare reason as its note")
-    remarks = [e for e in t2_events if e["type"] == "quotation.remark_added"]
-    check(remarks and all(e["from_status"] == e["to_status"] for e in remarks), "remarks are events that keep the same stage")
-    check(any(e["payload"].get("attachment") for e in remarks), "remark with a file records the attachment in its payload")
     call(
         "PUT",
         f"/api/tickets/{t2}/quotation",

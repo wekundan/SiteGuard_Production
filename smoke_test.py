@@ -199,14 +199,13 @@ with TestClient(main.app) as c:
     # --- SOP 7: outside path with quotation approval -----------------------
     t2 = call("POST", "/api/tickets/create", site, 201, "report second machine", {"machine_id": M_OUT})["ticket_id"]
     call("PUT", f"/api/tickets/{t2}/inspect", pm, 200, "P&M in-charge inspects (outside)", {"issue_description": "Engine overhaul", "repair_venue": "outside"})
-    check(tickets()[t2]["status"] == "quotation_requested", "outside inspect waits for vendor quotation")
-    upload(t2, mech, "quotation", PDF, 409, "vendor quotation only on vendor quotation stage")
+    check(tickets()[t2]["status"] == "pending_quotation", "outside inspect opens vendor quote stage")
     call(
         "PUT",
         f"/api/tickets/{t2}/quotation-request/message",
         mech,
         200,
-        "first request remark",
+        "follow-up remark on quote stage",
         {"note": "Called Shree Works on 10 Oct"},
     )
     upload(t2, mech, "quotation_request", PDF, 201, "request-support file", name="../evil name?.pdf")
@@ -218,8 +217,6 @@ with TestClient(main.app) as c:
         "remark with attachment name",
         {"note": "", "attachment_name": "evil name_.pdf"},
     )
-    call("PUT", f"/api/tickets/{t2}/quotation-request/continue", mech, 200, "advance to vendor quotation")
-    check(tickets()[t2]["status"] == "pending_quotation", "continue opens vendor quotation stage")
     upload(t2, site, "quotation", PDF, 403, "site office cannot attach quotation")
     upload(t2, mech, "quotation", b"just text", 415, "non PDF/JPG/PNG rejected")
     upload(t2, mech, "quotation", b"%PDF" + b"0" * (5 * 1024 * 1024), 413, "file over 5 MB rejected")

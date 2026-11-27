@@ -132,8 +132,8 @@ class RepairVenue(str, Enum):
 
 S = TicketStatus
 ALLOWED_TRANSITIONS = {
-    S.PENDING_INSPECTION: {S.PENDING_PARTS_CHECK, S.QUOTATION_REQUESTED},
-    S.QUOTATION_REQUESTED: {S.PENDING_QUOTATION},  # engineer confirms request remarks + quotation file
+    S.PENDING_INSPECTION: {S.PENDING_PARTS_CHECK, S.PENDING_QUOTATION},
+    S.QUOTATION_REQUESTED: {S.PENDING_QUOTATION},  # legacy rows only; migrated on startup
     S.PENDING_PARTS_CHECK: {S.REPAIR_IN_PROGRESS, S.PENDING_DISPATCH},
     S.PENDING_DISPATCH: {S.IN_TRANSIT, S.PENDING_LOCAL_PURCHASE},  # supply it, or ask site to buy locally
     S.PENDING_LOCAL_PURCHASE: {S.IN_TRANSIT},  # mechanical team confirms the local order
@@ -192,7 +192,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.11.0")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.11.2")
 
 
 def hash_password(password: str) -> str:
@@ -380,8 +380,10 @@ _EVENT_KINDS: dict[tuple[Optional[str], str], tuple[str, str, str]] = {
     (None, "pending_inspection"): ("breakdown.reported", "report", "pending"),
     ("pending_inspection", "pending_parts_check"): ("inspection.completed_in_house", "inspection", "success"),
     ("pending_inspection", "quotation_requested"): ("inspection.completed_outside", "inspection", "success"),
+    ("pending_inspection", "pending_quotation"): ("inspection.completed_outside", "inspection", "success"),
     ("quotation_requested", "quotation_requested"): ("quotation.remark_added", "quotation", "pending"),
     ("quotation_requested", "pending_quotation"): ("quotation.requested", "quotation", "pending"),
+    ("pending_quotation", "pending_quotation"): ("quotation.remark_added", "quotation", "pending"),
     ("pending_quotation", "pending_approval"): ("quotation.submitted", "quotation", "pending"),
     ("pending_approval", "pending_vendor_dispatch"): ("quotation.approved", "quotation", "success"),
     ("pending_approval", "pending_quotation"): ("quotation.rejected", "quotation", "problem"),
@@ -609,19 +611,11 @@ def _requisition_raiser_from_events(db: Session, ticket_id: str) -> Optional[str
 
 
 def migrate_stuck_quotation_request_logs() -> None:
-    """Older builds saved request remarks without advancing to pending_quotation."""
+    """Vendor quote no longer has a separate request-only stage; open rows move to pending_quotation."""
     if not inspect(engine).has_table("tickets"):
         return
     with SessionLocal() as db:
-        stuck = (
-            db.query(Ticket)
-            .filter(
-                Ticket.status == S.QUOTATION_REQUESTED,
-                Ticket.quotation_request_note.isnot(None),
-                Ticket.quotation_request_note != "",
-            )
-            .all()
-        )
+        stuck = db.query(Ticket).filter(Ticket.status == S.QUOTATION_REQUESTED).all()
         if not stuck:
             return
         now = _now()
@@ -961,7 +955,6 @@ _MECH_TASK_STATUSES = (
     S.PENDING_INSPECTION,
     S.PENDING_PARTS_CHECK,
     S.PENDING_LOCAL_PURCHASE,
-    S.QUOTATION_REQUESTED,
     S.PENDING_QUOTATION,
     S.PENDING_VENDOR_DISPATCH,
     S.VENDOR_REPAIR_IN_PROGRESS,
@@ -1182,7 +1175,7 @@ def inspect_ticket(
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
-    target = S.PENDING_PARTS_CHECK if payload.repair_venue == RepairVenue.IN_HOUSE else S.QUOTATION_REQUESTED
+    target = S.PENDING_PARTS_CHECK if payload.repair_venue == RepairVenue.IN_HOUSE else S.PENDING_QUOTATION
     description = payload.issue_description.strip()
     move_ticket(db, ticket, target, actor, note=description, payload={"venue": payload.repair_venue.value})
     ticket.issue_description = description
@@ -1321,7 +1314,7 @@ def report_wrong_parts(
     return finish(db, ticket)
 
 
-# SOP 7a: outside repair — remark thread before vendor quotation is attached
+# SOP 7a: outside repair — optional notes while preparing the vendor quote (same stage as submission)
 @app.put("/api/tickets/{ticket_id}/quotation-request/message", response_model=TicketResponse)
 def send_quotation_request_message(
     ticket_id: str,
@@ -1330,8 +1323,8 @@ def send_quotation_request_message(
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     ticket = get_ticket(db, ticket_id)
-    if ticket.status != S.QUOTATION_REQUESTED:
-        raise HTTPException(status_code=409, detail="This ticket is not waiting for a vendor quotation.")
+    if ticket.status != S.PENDING_QUOTATION:
+        raise HTTPException(status_code=409, detail="This ticket is not in the vendor quotation stage.")
     note = payload.note.strip()
     attach = (payload.attachment_name or "").strip()
     if not note and not attach:
@@ -1340,33 +1333,13 @@ def send_quotation_request_message(
     ticket.quotation_request_note = (
         f"{ticket.quotation_request_note}\n{line}" if ticket.quotation_request_note else line
     )
+    st = S.PENDING_QUOTATION.value
     db.add(
         log_event(
-            ticket, actor, S.QUOTATION_REQUESTED.value, S.QUOTATION_REQUESTED.value,
+            ticket, actor, st, st,
             note=note, payload={"attachment": attach} if attach else None,
         )
     )
-    return finish(db, ticket)
-
-
-@app.put("/api/tickets/{ticket_id}/quotation-request/continue", response_model=TicketResponse)
-def continue_quotation_request(
-    ticket_id: str,
-    actor: User = Depends(require_roles(*MECH)),
-    db: Session = Depends(get_db),
-) -> TicketResponse:
-    ticket = get_ticket(db, ticket_id)
-    if ticket.status != S.QUOTATION_REQUESTED:
-        raise HTTPException(status_code=409, detail="This ticket is not waiting for a vendor quotation.")
-    has_remark = bool((ticket.quotation_request_note or "").strip())
-    has_file = (
-        db.query(TicketFile)
-        .filter(TicketFile.ticket_id == ticket_id, TicketFile.kind == "quotation_request")
-        .count()
-    )
-    if not has_remark and not has_file:
-        raise HTTPException(status_code=422, detail="Send at least one remark or file first.")
-    move_ticket(db, ticket, S.PENDING_QUOTATION, actor)
     return finish(db, ticket)
 
 
@@ -1514,10 +1487,10 @@ def assert_may_manage_file_kind(user: User, ticket: Ticket, kind: FileKind) -> N
     elif kind == FileKind.QUOTATION_REQUEST:
         if effective_role(user.role) not in MECH:
             raise HTTPException(status_code=403, detail="Your role cannot do this action.")
-        if ticket.status != S.QUOTATION_REQUESTED:
+        if ticket.status != S.PENDING_QUOTATION:
             raise HTTPException(
                 status_code=409,
-                detail="Request-support files can only be added while logging the quotation request.",
+                detail="Support files can only be added while preparing the vendor quote.",
             )
     elif kind == FileKind.DISPATCH:
         if effective_role(user.role) != UserRole.CENTRAL_STORE:

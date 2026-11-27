@@ -193,7 +193,7 @@ def sla_due_at(status_: TicketStatus, stage_entered_at: datetime, eta_date: Opti
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-change-me").encode()
 TOKEN_TTL_SECONDS = 12 * 3600
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD") or "siteguard123"  # `or`: blank env var falls back too
-APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.11.4")
+APP_UI_VERSION = os.getenv("APP_UI_VERSION", "3.11.6")
 
 
 def hash_password(password: str) -> str:
@@ -975,7 +975,7 @@ TASK_STATUSES_BY_ROLE: dict[UserRole, tuple[TicketStatus, ...]] = {
 STAGE_LABELS: dict[str, str] = {
     "pending_inspection": "Awaiting inspection",
     "pending_parts_check": "Checking site store stock",
-    "pending_dispatch": "Central parts desk",
+    "pending_dispatch": "Awaiting central store",
     "pending_local_purchase": "Buy parts at site",
     "in_transit": "Parts on the way",
     "quotation_requested": "Vendor quote requested",
